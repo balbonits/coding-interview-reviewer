@@ -1,0 +1,235 @@
+---
+title: "Node.js & Server-Side: Interview-Ready Reference"
+tags: ["node", "javascript", "backend", "async", "streams", "event-loop", "interviews"]
+related: ["rest-apis", "mongodb", "javascript-closures"]
+---
+
+What interviewers actually probe in a Node.js round: the event loop, async patterns, streams, the modern Node feature set (Node 22+), and the difference between `cluster` / `worker_threads` / `child_process`. This note is dense by design — skim before an interview, drill on the parts that surprise you.
+
+## The event loop (the thing every interview asks about)
+
+Node uses **libuv** under the hood. The event loop runs in **phases** — each phase has its own callback queue:
+
+1. **timers** — `setTimeout` / `setInterval` callbacks whose threshold has elapsed
+2. **pending callbacks** — some I/O callbacks deferred from a previous loop
+3. **idle, prepare** — internal
+4. **poll** — retrieve new I/O events; run I/O callbacks; block here if nothing else is queued
+5. **check** — `setImmediate` callbacks
+6. **close callbacks** — `socket.on("close", ...)`
+
+**Microtasks** (Promise `.then`/`.catch`/`.finally`, `queueMicrotask`, `await` resumes) and the **`process.nextTick` queue** drain *between every callback*, not between phases. That's why a runaway `process.nextTick` loop can starve I/O.
+
+```js
+setTimeout(() => console.log("timeout"), 0);
+setImmediate(() => console.log("immediate"));
+Promise.resolve().then(() => console.log("microtask"));
+process.nextTick(() => console.log("nextTick"));
+console.log("sync");
+
+// sync
+// nextTick
+// microtask
+// timeout    (or "immediate" first — order between these two is unstable when not inside an I/O callback)
+// immediate
+```
+
+**Common interview prompt:** "What's the difference between `process.nextTick` and `Promise.resolve().then(...)`?"
+- `process.nextTick` runs *before* microtasks.
+- Both run before the next event loop phase.
+- `process.nextTick` is Node-only; `queueMicrotask` is the cross-platform equivalent of the Promise-microtask path.
+
+## Async patterns
+
+```js
+// Run in parallel; reject as soon as any fails
+const [users, orders] = await Promise.all([fetchUsers(), fetchOrders()]);
+
+// Run in parallel; collect ALL outcomes (never rejects)
+const results = await Promise.allSettled([fetchA(), fetchB()]);
+// results: [{ status: "fulfilled", value: ... } | { status: "rejected", reason: ... }, ...]
+
+// First successful one wins (rejects only if all reject)
+const fastest = await Promise.any([primary(), backup()]);
+
+// First settled one (success OR failure) wins
+const winner = await Promise.race([apiCall(), timeout(500)]);
+```
+
+**`for await...of`** for async iterators (database cursors, streams):
+
+```js
+for await (const chunk of readable) {
+  process(chunk);
+}
+```
+
+**Top-level `await`** is supported in ESM since Node 14+.
+
+## Streams
+
+Four kinds:
+- **Readable** — sources (file read, HTTP response, `process.stdin`)
+- **Writable** — sinks (file write, HTTP response, `process.stdout`)
+- **Duplex** — both (TCP socket)
+- **Transform** — duplex with conversion (gzip, parser)
+
+The modern way to compose them is **`stream.pipeline`** (it propagates errors and cleans up):
+
+```js
+import { pipeline } from "node:stream/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { createGzip } from "node:zlib";
+
+await pipeline(
+  createReadStream("input.txt"),
+  createGzip(),
+  createWriteStream("input.txt.gz"),
+);
+```
+
+**Backpressure** is the magic: if the writable can't keep up, the readable pauses. `pipeline` handles this for you. Don't reach for `.pipe()` anymore — it doesn't propagate errors cleanly.
+
+## Modern Node.js features (Node 22+)
+
+The Node you trained on is probably from a few years ago. Here's what's worth knowing now:
+
+- **Built-in test runner** — `node --test` runs files under `test/**` or `*.test.js`; no Jest install needed.
+- **Built-in fetch** — `fetch`, `Headers`, `Request`, `Response`, `FormData`, `Blob`, `File` are all globals since 18.
+- **`--watch`** — `node --watch index.js` restarts on file change. No nodemon needed.
+- **`--env-file=.env`** — load env vars without `dotenv`.
+- **Native `.env` support** under `process.loadEnvFile()`.
+- **`require(esm)`** — Node 22+ lets CommonJS `require()` ESM modules synchronously (with caveats; behind `--experimental-require-module` until very recently, on by default in 22+).
+- **`node:` prefix imports** — always prefer `import fs from "node:fs/promises"` over `"fs/promises"`. Faster resolution, future-proof.
+- **`AbortSignal.timeout(ms)`** and **`AbortSignal.any([sig1, sig2])`** — composable cancellation.
+- **`structuredClone(value)`** — deep clone, including `Map`/`Set`/`Date`/`RegExp`/`ArrayBuffer`.
+
+## File I/O (modern, with cancellation)
+
+```js
+import fs from "node:fs/promises";
+
+const ac = new AbortController();
+setTimeout(() => ac.abort(), 5000);
+
+const text = await fs.readFile("./big.txt", { encoding: "utf8", signal: ac.signal });
+await fs.writeFile("./out.txt", text);
+
+// Read line-by-line without loading the whole file:
+const stream = fs.createReadStream("./huge.log", { encoding: "utf8" });
+const rl = readline.createInterface({ input: stream });
+for await (const line of rl) {
+  if (line.includes("ERROR")) console.log(line);
+}
+```
+
+## Process model
+
+Three ways to use more than one CPU:
+
+| Tool | Sharing | Use for |
+|---|---|---|
+| **`cluster`** | Shares ports/sockets via the master | HTTP servers that scale across cores |
+| **`worker_threads`** | Shares memory via `SharedArrayBuffer` / `MessageChannel` | CPU-bound work in the same process |
+| **`child_process`** | Fully separate process; pipes for IPC | Spawning external CLI tools / isolation |
+
+**Rule of thumb:** for an HTTP API, put Node behind a reverse proxy (nginx, fly.io, Cloud Run) and let the platform fork processes. `cluster` is rarely the right answer in 2026.
+
+## HTTP servers
+
+```js
+import http from "node:http";
+
+const server = http.createServer(async (req, res) => {
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  res.writeHead(404).end();
+});
+
+server.listen(3000);
+```
+
+In real apps, use a framework. The current contenders:
+
+- **Express 5** — long-time default; Promise-aware error handling is finally built in.
+- **Fastify** — faster, schema-first (JSON Schema for validation + serialization).
+- **Hono** — works in Node, Bun, Deno, Cloudflare Workers, Vercel Edge. Tiny.
+- **Next.js Route Handlers** — when your API and UI live together (this project!).
+
+## Package.json that interviewers ask about
+
+```json
+{
+  "name": "my-pkg",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./dist/client.js",
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#config": "./src/config.js"
+  }
+}
+```
+
+- **`type: "module"`** — `.js` files are ESM by default.
+- **`exports`** — modern replacement for `main`. Lets you whitelist subpaths and have separate entries for `import` vs `require`.
+- **`imports`** with `#`-prefixed subpaths — tidy way to alias internal imports without a bundler.
+
+## Error handling at the edges
+
+- **`uncaughtException`** — last-ditch handler. Log, then exit. The process is in an undefined state.
+- **`unhandledRejection`** — Promise rejection nobody caught. Same advice: log, exit.
+- **Graceful shutdown** — listen for `SIGTERM` / `SIGINT`, stop accepting new connections, finish in-flight requests, close DB pools.
+
+```js
+const server = http.createServer(handler).listen(3000);
+
+function shutdown() {
+  server.close((err) => process.exit(err ? 1 : 0));
+  setTimeout(() => process.exit(1), 10_000).unref();   // hard cap
+}
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
+```
+
+## Testing with the built-in runner
+
+```js
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+
+describe("add", () => {
+  test("adds positives", () => {
+    assert.equal(2 + 2, 4);
+  });
+  test("rejects on bad input", async () => {
+    await assert.rejects(async () => Promise.reject(new Error("nope")), /nope/);
+  });
+});
+```
+
+Run with `node --test`. Watch mode: `node --test --watch`.
+
+## Common interview prompts
+
+- "Walk me through the Node event loop." → phases, microtasks vs macrotasks, where `nextTick` fits.
+- "Why is Node single-threaded?" → JS execution is; I/O is offloaded to libuv's thread pool. CPU-bound work blocks the loop — use `worker_threads`.
+- "Difference between `setImmediate` and `setTimeout(fn, 0)`?" → both ~0ms but in different phases. Inside an I/O callback, `setImmediate` always fires first.
+- "How would you handle a CPU-intensive task?" → offload to `worker_threads` (in-process) or a separate service / queue.
+- "What's a stream and when would you use one?" → backpressure-aware data movement. Use any time data doesn't fit comfortably in memory.
+- "What's the difference between `cluster` and `worker_threads`?" → cluster = multiple processes sharing a port; workers = threads sharing memory.
+- "How do you handle graceful shutdown?" → SIGTERM → stop accepting → finish in-flight → close pools → exit.
+- "ESM vs CommonJS?" → static imports / tree-shaking / top-level await (ESM); dynamic require / circular tolerance (CJS). Modern: ESM by default, interop is much smoother in Node 22+.
+
+## Further reading
+
+- [Node.js Docs — Event Loop, Timers, and `process.nextTick()`](https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick)
+- [Node.js Docs — `node:stream` and the `pipeline()` helper](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-callback)
+- [Node.js Docs — Built-in test runner](https://nodejs.org/api/test.html)
+- [Node.js Docs — `worker_threads`](https://nodejs.org/api/worker_threads.html)
+- [Node.js Docs — Package.json `exports` field](https://nodejs.org/api/packages.html#package-entry-points)

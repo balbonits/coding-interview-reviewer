@@ -1,0 +1,8 @@
+{
+  "slug": "two-sum",
+  "title": "Two Sum",
+  "tags": ["array", "hash-map", "javascript"],
+  "difficulty": "easy",
+  "estimatedMinutes": 15,
+  "concepts": ["hash-maps", "iteration"]
+}

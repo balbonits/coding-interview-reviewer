@@ -1,0 +1,172 @@
+---
+title: "TypeScript Utility Types & Modern Features (5.x)"
+tags: ["typescript", "types", "fundamentals"]
+related: ["generics", "type-narrowing", "discriminated-unions"]
+---
+
+TypeScript ships a small library of built-in **utility types** that transform other types — making props optional, extracting return types, picking subsets of keys. Knowing them isn't optional for a serious TS interview.
+
+This note covers the utility types you must know plus the modern features (`satisfies`, `const` type parameters, `NoInfer`) that signal you've kept up with TS 5.x.
+
+## The "must know cold" utility types
+
+### `Partial<T>` — make all keys optional
+
+```ts
+type User = { id: string; name: string; email: string };
+type UpdateUser = Partial<User>;
+// = { id?: string; name?: string; email?: string }
+```
+
+Use case: PATCH endpoints that accept any subset of fields.
+
+### `Required<T>` — make all keys required
+
+The inverse of `Partial`. Useful when narrowing a type that has too many `?`s.
+
+### `Readonly<T>` — freeze the type
+
+```ts
+type FrozenUser = Readonly<User>;
+const u: FrozenUser = { id: "1", name: "Maya", email: "..." };
+u.name = "X";  // error
+```
+
+Doesn't deeply freeze — just one level. For deep, write your own `DeepReadonly<T>` recursively.
+
+### `Pick<T, K>` and `Omit<T, K>` — subset of keys
+
+```ts
+type PublicUser = Pick<User, "id" | "name">;        // { id, name }
+type UserNoEmail = Omit<User, "email">;             // { id, name }
+```
+
+Use case: shaping API responses or component prop subsets.
+
+### `Record<K, V>` — typed dictionary
+
+```ts
+type RoleMap = Record<"admin" | "user", string[]>;
+// = { admin: string[]; user: string[] }
+```
+
+Better than `{ [k: string]: V }` when the key set is bounded.
+
+### `ReturnType<T>` and `Parameters<T>` — extract from functions
+
+```ts
+function load(id: string, signal: AbortSignal): Promise<User> { /* ... */ }
+
+type Loaded   = ReturnType<typeof load>;     // Promise<User>
+type LoadArgs = Parameters<typeof load>;     // [string, AbortSignal]
+```
+
+Lets your code derive types from concrete functions instead of duplicating.
+
+### `Awaited<T>` — unwrap a Promise
+
+```ts
+type R = ReturnType<typeof load>;   // Promise<User>
+type U = Awaited<R>;                // User
+```
+
+### `NonNullable<T>` — remove null and undefined
+
+```ts
+type MaybeUser     = User | null | undefined;
+type DefinitelyUser = NonNullable<MaybeUser>;   // User
+```
+
+## Modern features (TS 5.x — interview differentiators)
+
+### `satisfies` (TS 4.9, refined in 5.x)
+
+The classic problem: you want to check that a value matches a type **without widening** the value's inferred type.
+
+```ts
+// Without satisfies — you lose the literal info:
+const config: Record<string, string | number> = {
+  port: 3000,
+  host: "localhost",
+};
+config.port.toFixed(2);     // ✓ ok
+config.host.toUpperCase();  // ✗ error — `string | number` can't .toUpperCase()
+
+// With satisfies — type is checked, but inference is preserved:
+const config = {
+  port: 3000,
+  host: "localhost",
+} satisfies Record<string, string | number>;
+
+config.port.toFixed(2);     // ✓
+config.host.toUpperCase();  // ✓ — `host` is still inferred as string
+```
+
+`satisfies` is the answer when you'd reach for an `as` cast — but want type safety, not assertion.
+
+### `const` type parameters (TS 5.0)
+
+When a function takes a literal value, `const` tells TS to preserve the literal type instead of widening.
+
+```ts
+// Without:
+function pickFirst<T>(arr: readonly T[]): T { return arr[0]; }
+const x = pickFirst(["a", "b", "c"]);
+//    ^ type: string  ← widened
+
+// With:
+function pickFirst<const T>(arr: readonly T[]): T { return arr[0]; }
+const x = pickFirst(["a", "b", "c"]);
+//    ^ type: "a"  ← literal preserved
+```
+
+Game-changer for libraries that work with literal unions (form schemas, event names, route configs).
+
+### `NoInfer<T>` (TS 5.4)
+
+When a generic appears in multiple parameters, TS infers from all of them. Sometimes you want only ONE parameter to drive inference.
+
+```ts
+function setDefault<T>(value: T, defaultValue: T): T { /* ... */ return value; }
+setDefault("hello", 42);
+// T inferred as `string | number` — both args contributed.
+
+// Block defaultValue from contributing:
+function setDefault<T>(value: T, defaultValue: NoInfer<T>): T { /* ... */ return value; }
+setDefault("hello", 42);   // ✗ error — 42 isn't a string
+```
+
+## Discriminated unions: the most-asked TS pattern
+
+Tagged unions where each variant has a literal type field. The compiler narrows automatically when you `switch` on the tag.
+
+```tsx
+type Result<T> =
+  | { status: "loading" }
+  | { status: "success"; data: T }
+  | { status: "error";   error: Error };
+
+function render(r: Result<User>) {
+  switch (r.status) {
+    case "loading": return <Spinner />;
+    case "success": return <Profile user={r.data} />;       // r.data is typed!
+    case "error":   return <Err msg={r.error.message} />;   // r.error is typed!
+  }
+}
+```
+
+This pattern beats `if (data) ... else if (error) ...` every time. Reach for it whenever you model "one of N states" data.
+
+## What interviewers want to hear
+
+- Know all the basic utility types cold (Partial, Pick, Omit, Record, ReturnType, Awaited).
+- Use `satisfies` instead of `as` when you want type checking with inference preserved.
+- Reach for discriminated unions for any "one of N states" data shape.
+- Know that TS 5 added `const` type parameters and `NoInfer` (signals you actually keep up).
+
+## Sources
+
+- [TypeScript Utility Types — official docs](https://www.typescriptlang.org/docs/handbook/utility-types.html)
+- [satisfies operator (Total TypeScript)](https://www.totaltypescript.com/how-to-use-satisfies-operator)
+- [NoInfer in TypeScript 5.4 (Total TypeScript)](https://www.totaltypescript.com/noinfer)
+- [TypeScript 5.4 release notes](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-5-4.html)

@@ -1,0 +1,8 @@
+{
+  "slug": "fizzbuzz",
+  "title": "FizzBuzz",
+  "tags": ["loops", "modulo", "javascript"],
+  "difficulty": "easy",
+  "estimatedMinutes": 10,
+  "concepts": ["iteration", "control-flow"]
+}

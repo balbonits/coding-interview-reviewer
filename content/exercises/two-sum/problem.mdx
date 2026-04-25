@@ -1,0 +1,19 @@
+---
+title: "Two Sum"
+---
+
+Given an array of integers `nums` and an integer `target`, return the indices of the two numbers such that they add up to `target`.
+
+You may assume each input has **exactly one solution**, and you may not use the same element twice. You can return the indices in any order.
+
+## Examples
+
+```js
+twoSum([2, 7, 11, 15], 9)   // → [0, 1]   (nums[0] + nums[1] === 9)
+twoSum([3, 2, 4], 6)        // → [1, 2]
+twoSum([3, 3], 6)           // → [0, 1]
+```
+
+## Hint
+
+A naive `O(n²)` solution does the trick — but can you get to `O(n)` in one pass? What data structure lets you ask "have I seen the complement of this number before?" in `O(1)`?

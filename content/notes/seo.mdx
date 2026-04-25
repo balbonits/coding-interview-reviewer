@@ -1,0 +1,180 @@
+---
+title: "SEO for Front-End Engineers"
+tags: ["seo", "html", "performance", "metadata", "interviews"]
+related: ["modern-html", "modern-css"]
+---
+
+SEO at the front-end layer is mostly about three things: **letting crawlers see and understand your content**, **giving social platforms a clean preview**, and **shipping fast** because Google ranks slow pages worse. This note is the front-end engineer's slice — not link-building or content strategy.
+
+## The mental model
+
+Search engines do three things:
+1. **Crawl** — discover your URLs (via links, sitemaps, robots.txt).
+2. **Render** — execute enough of your page to extract content. Googlebot uses a recent Chromium and runs JS; many other crawlers don't, or do it poorly.
+3. **Index** — store the extracted content keyed by topic.
+
+Your front-end job: make all three easy. The biggest wins come from (a) shipping the meaningful content in the initial HTML response, (b) using semantic markup so the renderer doesn't have to guess, (c) hitting the Core Web Vitals thresholds.
+
+## Rendering strategies (where Next.js shines)
+
+| Strategy | When to use | SEO impact |
+|---|---|---|
+| **SSG** (static at build time) | Marketing pages, blog posts, docs | Best — fastest LCP, rich initial HTML |
+| **SSR** (server-rendered per request) | Personalized but indexable pages | Excellent — full HTML on first byte |
+| **ISR** (static + on-demand revalidation) | Content that changes occasionally | Excellent — SSG perf, fresh content |
+| **CSR** (client-rendered SPA) | Auth-walled apps that don't need to be indexed | Bad — crawlers see an empty shell |
+
+In Next.js App Router, the default is RSC + SSR. **Don't make pages that should be indexed `"use client"` unless you have a reason** — server components ship the rendered HTML.
+
+## Semantic HTML (the easiest win)
+
+```html
+<header>...</header>
+<nav>...</nav>
+<main>
+  <article>
+    <h1>Page title — used as the search result title if no <title>/og:title</title>
+    <time datetime="2026-04-25">April 25, 2026</time>
+    <p>...</p>
+  </article>
+  <aside>...</aside>
+</main>
+<footer>...</footer>
+```
+
+- **One `<h1>`** per page. Search engines weigh it heavily.
+- **Heading hierarchy** (`h1` → `h2` → `h3`) without skipping levels — both for accessibility and for content extraction.
+- **Descriptive `alt`** on every `<img>` (empty `alt=""` for decorative images — *don't omit the attribute*).
+- **`<a href>`** for navigation, not `<div onClick>`. Crawlers follow `href`s.
+
+## The metadata that actually matters
+
+```html
+<head>
+  <title>Page Title — Site Name (under 60 chars)</title>
+  <meta name="description" content="One sentence under ~160 chars that you'd be happy to see in a search result.">
+  <link rel="canonical" href="https://example.com/the-canonical-url">
+
+  <!-- Open Graph (Facebook, Slack, iMessage, LinkedIn, ...) -->
+  <meta property="og:title" content="Page Title">
+  <meta property="og:description" content="Same sentence as description, usually">
+  <meta property="og:image" content="https://example.com/og-image.png">  <!-- 1200×630 -->
+  <meta property="og:url" content="https://example.com/the-url">
+  <meta property="og:type" content="article">
+
+  <!-- Twitter / X -->
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Robots (rare; default is fine for public pages) -->
+  <meta name="robots" content="index, follow">
+</head>
+```
+
+In Next.js App Router, all of this is generated from the `metadata` export (or `generateMetadata` for dynamic pages):
+
+```ts
+// app/posts/[slug]/page.tsx
+export async function generateMetadata({ params }) {
+  const post = await getPost(params.slug);
+  return {
+    title: `${post.title} — My Blog`,
+    description: post.excerpt,
+    openGraph: { title: post.title, images: [post.ogImage] },
+    twitter: { card: "summary_large_image" },
+    alternates: { canonical: `https://example.com/posts/${post.slug}` },
+  };
+}
+```
+
+## Structured data (JSON-LD)
+
+Google reads JSON-LD blocks to power rich results (the star ratings, recipe cards, breadcrumbs, FAQ accordions you see in SERPs). Drop a `<script type="application/ld+json">` into the page:
+
+```html
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Modern CSS in 2026",
+  "author": { "@type": "Person", "name": "Alice" },
+  "datePublished": "2026-04-15",
+  "image": "https://example.com/cover.jpg"
+}
+</script>
+```
+
+Validate with [Google's Rich Results Test](https://search.google.com/test/rich-results). Schema types worth knowing: `Article`, `Product`, `Recipe`, `FAQPage`, `BreadcrumbList`, `Organization`, `Person`, `LocalBusiness`.
+
+## Crawler controls
+
+**`robots.txt`** at the site root — high-level allow/disallow:
+
+```
+User-agent: *
+Disallow: /admin/
+Allow: /
+Sitemap: https://example.com/sitemap.xml
+```
+
+**`<meta name="robots">`** or HTTP `X-Robots-Tag` — per-page controls:
+- `noindex` — don't show this page in results
+- `nofollow` — don't follow links from this page
+- `noarchive` — don't show a cached copy
+
+**Sitemaps** (`sitemap.xml`) — list of URLs you want crawled, with optional last-modified hints. In Next.js, generate one with `app/sitemap.ts`. Bigger sites split into multiple sitemaps + a sitemap index.
+
+## Core Web Vitals (Google's perf signal)
+
+Three metrics, measured at the **75th percentile** of real-user data (CrUX):
+
+| Metric | What | Target | Common cause if bad |
+|---|---|---|---|
+| **LCP** (Largest Contentful Paint) | Time to render the largest above-the-fold element | ≤ **2.5 s** | Slow server, render-blocking JS/CSS, late-loaded hero image |
+| **INP** (Interaction to Next Paint) | Worst-case latency between user input and the next frame | ≤ **200 ms** | Long JS tasks blocking the main thread |
+| **CLS** (Cumulative Layout Shift) | Sum of unexpected layout shifts during page life | ≤ **0.1** | Images without dimensions, late-loading fonts/ads |
+
+(INP replaced FID in March 2024 — older tutorials may still mention FID.)
+
+**Fixing each:**
+- **LCP**: preload the hero image (`<link rel="preload" as="image">`); set `fetchpriority="high"`; SSR your HTML; avoid render-blocking scripts.
+- **INP**: break up long tasks (`yield()` patterns, `scheduler.yield()` is shipping); avoid heavy JS on user input handlers; debounce.
+- **CLS**: declare `width`/`height` on `<img>` and `<video>`; use `aspect-ratio` for embeds; reserve space for ads/embeds; avoid injecting content above existing content.
+
+## Modern image performance
+
+```html
+<img
+  src="hero.webp"
+  width="1200" height="600"
+  alt="Descriptive alt text"
+  loading="lazy"          <!-- native lazy-loading; defer below-the-fold images -->
+  decoding="async"
+  fetchpriority="high"    <!-- only on the LCP image -->
+>
+```
+
+In Next.js: `<Image>` component handles `loading`, `decoding`, modern formats (AVIF/WebP), and resolution switching automatically.
+
+## Mobile and accessibility = SEO
+
+- **Mobile-first index** is now the only index. Mobile Lighthouse score ≈ your SEO ceiling.
+- **Accessible pages rank better.** Many a11y signals (alt text, headings, semantic landmarks, focus order, reduced motion respect) double as SEO signals.
+- **`<html lang="en">`** — declare the language. Without it, translators and accessibility tools guess.
+- **HTTPS** is a ranking signal and required for most modern APIs (service worker, geolocation, etc.).
+
+## Common interview prompts
+
+- "Why is SSR/SSG better than CSR for SEO?" → crawlers (especially non-Google) see real content immediately; Googlebot can render JS but with delay and budget caps.
+- "What are Core Web Vitals?" → LCP/INP/CLS, the targets, what causes regressions.
+- "What's a canonical URL?" → tells search engines which version of duplicate-or-near-duplicate pages is the "real" one — fixes things like `?utm_source` query strings creating duplicate index entries.
+- "How do you make a single-page app SEO-friendly?" → server-render the routes you want indexed (Next.js App Router, Remix), or pre-render at build time. Don't rely on the crawler running your JS.
+- "What's the difference between `noindex` and `disallow`?" → `Disallow` (robots.txt) blocks *crawling*; `noindex` (meta) blocks *indexing*. Counter-intuitively, you can `noindex` a page that's still allowed to be crawled.
+- "What rich-results schema would you use for [...]?" → name the schema.org type and the required fields.
+
+## Further reading
+
+- [web.dev — Core Web Vitals (LCP / INP / CLS)](https://web.dev/articles/vitals)
+- [Google Search Central — Documentation hub](https://developers.google.com/search/docs)
+- [Schema.org — Full type list](https://schema.org/docs/full.html)
+- [Next.js — Metadata API](https://nextjs.org/docs/app/api-reference/functions/generate-metadata)
+- [Next.js — Sitemap and robots files](https://nextjs.org/docs/app/api-reference/file-conventions/metadata/sitemap)

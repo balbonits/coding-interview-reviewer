@@ -1,0 +1,124 @@
+---
+title: "JavaScript Closures & Lexical Scoping"
+tags: ["javascript", "ecmascript", "fundamentals"]
+related: ["scope", "memory-management", "modules"]
+---
+
+A **closure** is a function bundled with references to its surrounding state (its lexical environment). Every JS function is a closure — it remembers the variables that were in scope when it was *defined*, even after the outer function has returned.
+
+Closures are the #1 most-asked JS interview topic. Modern interviewers don't ask "what is a closure?" — they show you a buggy snippet involving closures and ask you to fix it.
+
+## The mental model
+
+Think of a function as carrying a backpack. When the function is created, JS packs the surrounding variables (any names accessible from where it was *defined*, not where it's *called*) into the backpack. When the function later runs, it unpacks the backpack to find those variables.
+
+```js
+function makeCounter() {
+  let count = 0;          // packed into the closure
+  return () => ++count;   // carries `count` around
+}
+
+const counter = makeCounter();
+counter(); // 1
+counter(); // 2
+counter(); // 3
+// `count` survives even though makeCounter has returned long ago.
+```
+
+## Three things closures get used for
+
+### 1. Private state (the module pattern)
+
+Variables inside a closure are inaccessible from outside — you can only interact via the returned functions. This is how JS emulated `private` before classes.
+
+```js
+function createWallet() {
+  let balance = 0;                            // private
+  return {
+    deposit:    (n) => (balance += n),
+    withdraw:   (n) => (balance = Math.max(0, balance - n)),
+    getBalance: () => balance,
+  };
+}
+```
+
+### 2. Factories and partial application
+
+A function that returns a customized function.
+
+```js
+const greet = (greeting) => (name) => `${greeting}, ${name}!`;
+const sayHi = greet("Hi");
+sayHi("Maya"); // "Hi, Maya!"
+```
+
+### 3. Memoization, debounce, throttle
+
+The "outer" scope holds state (cache, timer id) that persists across calls.
+
+```js
+function memoize(fn) {
+  const cache = new Map();
+  return (arg) => {
+    if (!cache.has(arg)) cache.set(arg, fn(arg));
+    return cache.get(arg);
+  };
+}
+```
+
+## Classic interview trap: `var` in a loop
+
+```js
+for (var i = 0; i < 3; i++) {
+  setTimeout(() => console.log(i), 0);
+}
+// prints: 3, 3, 3   ← surprise!
+```
+
+`var` is function-scoped, so all three callbacks share the same `i`. By the time the timeouts fire, the loop is done and `i === 3`.
+
+**Two fixes:**
+
+1. Use `let` (block-scoped — each iteration gets its own `i`):
+
+   ```js
+   for (let i = 0; i < 3; i++) {
+     setTimeout(() => console.log(i), 0);   // 0, 1, 2
+   }
+   ```
+
+2. Wrap in an IIFE to capture per iteration:
+
+   ```js
+   for (var i = 0; i < 3; i++) {
+     ((j) => setTimeout(() => console.log(j), 0))(i);   // 0, 1, 2
+   }
+   ```
+
+## Memory leak gotcha
+
+Closures keep their captured variables alive — the GC can't free anything in a closure's reach. If a closure captures a giant object you don't need, you've created a leak.
+
+```js
+function setup() {
+  const huge = new Array(1_000_000).fill("x");
+  document.body.addEventListener("click", () => {
+    console.log("clicked");   // doesn't use `huge` but still keeps it alive!
+  });
+}
+```
+
+The click handler captures the entire scope, even unused names. Fix: don't define handlers inside scopes that hold data they don't need, or null out big variables when done.
+
+## What interviewers want to hear
+
+- Closure = function + its lexical environment.
+- Defined by where the function was *written*, not where it's *called* (lexical, not dynamic).
+- Use cases: private state, factories, callbacks that need memory.
+- Watch out for `var` in loops and accidental memory retention.
+
+## Sources
+
+- [JavaScript Closures: Top Interview Questions (DEV)](https://dev.to/nozibul_islam_113b1d5334f/javascript-closures-top-interview-questions-and-answers-1fni)
+- [Front End Interview Handbook — JS Questions](https://www.frontendinterviewhandbook.com/javascript-questions)
+- [Closures — MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Closures)

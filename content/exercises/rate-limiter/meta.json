@@ -1,0 +1,8 @@
+{
+  "slug": "rate-limiter",
+  "title": "Sliding-Window Rate Limiter",
+  "tags": ["node", "rate-limiting", "javascript", "data-structures"],
+  "difficulty": "medium",
+  "estimatedMinutes": 30,
+  "concepts": ["sliding-window", "queues", "time", "dependency-injection"]
+}

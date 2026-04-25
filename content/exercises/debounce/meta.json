@@ -1,0 +1,8 @@
+{
+  "slug": "debounce",
+  "title": "Implement debounce",
+  "tags": ["closures", "timers", "javascript", "utilities"],
+  "difficulty": "medium",
+  "estimatedMinutes": 20,
+  "concepts": ["closures", "higher-order-functions", "this-binding"]
+}

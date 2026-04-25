@@ -1,0 +1,199 @@
+---
+title: "UX/UI for Front-End Interviews"
+tags: ["ux", "ui", "accessibility", "a11y", "design", "interviews"]
+related: ["modern-html", "modern-css"]
+---
+
+This note covers what front-end engineers get asked about UX/UI: accessibility (the single biggest topic), interaction design fundamentals, and design system literacy. Not Photoshop or color theory — the stuff that distinguishes a senior FE from a code-only junior.
+
+## Accessibility (a11y) — the big one
+
+WCAG 2.2 is the current standard (2.0/2.1 are still cited; 2.2 added 9 new criteria around target size, focus, dragging). Conformance levels: **A** (minimum), **AA** (the practical legal bar in most jurisdictions), **AAA** (rarely required, sometimes impossible).
+
+Four guiding principles (POUR):
+
+1. **Perceivable** — content must be presentable in a way users can perceive (alt text, captions, color contrast).
+2. **Operable** — UI must be usable via keyboard, voice, switch devices.
+3. **Understandable** — content and controls behave predictably.
+4. **Robust** — works across user agents and assistive tech.
+
+### Semantic HTML first
+
+The single biggest a11y win is using the right element. A native `<button>` gets keyboard focus, `Enter`/`Space` activation, screen-reader announcement, and OS conventions for free. A `<div onClick>` gets none of that without manual work.
+
+```html
+<!-- ✗ Bad -->
+<div class="btn" onClick={handleSubmit}>Submit</div>
+
+<!-- ✓ Good -->
+<button type="button" onClick={handleSubmit}>Submit</button>
+```
+
+**Pick the element first**, reach for ARIA only when no HTML element fits.
+
+### When to use ARIA (and when NOT)
+
+The first rule of ARIA is "don't use ARIA." The second rule is "if you must, use the right role and keep state in sync."
+
+**Use ARIA when:**
+- You're building a widget HTML doesn't have (combobox, treeview, menu, tabs).
+- You need to announce dynamic changes (`aria-live="polite"` for non-critical, `assertive` for critical).
+- You need to label something where visible text isn't possible (`aria-label`, `aria-labelledby`).
+
+**Don't use ARIA when:**
+- A semantic element already exists. `role="button"` on a `<div>` is strictly worse than just using `<button>`.
+- You're "fixing" something a screen reader already handles (e.g., adding `aria-label` to text that's already there).
+- You don't keep the state attributes (`aria-expanded`, `aria-selected`, `aria-pressed`) in sync with reality. A wrong attribute is worse than none.
+
+### Color contrast
+
+WCAG AA requires:
+- **4.5:1** for normal text
+- **3:1** for large text (≥18pt or ≥14pt bold)
+- **3:1** for UI components and graphical objects
+
+Use the [WebAIM Contrast Checker](https://webaim.org/resources/contrastchecker/), browser devtools (Chrome's contrast eyedropper), or design tokens that bake in compliant pairs.
+
+**Don't rely on color alone** to convey meaning. A red field is fine; a red field *plus* an icon and text is accessible.
+
+### Keyboard navigation
+
+- **Tab order** follows DOM order. Avoid positive `tabindex` values.
+- **`tabindex="0"`** — make a non-interactive element focusable.
+- **`tabindex="-1"`** — programmatically focusable (for a managed focus pattern), not in the tab sequence.
+- **Skip links** — first focusable element should be "Skip to main content" for keyboard users.
+- **Focus indicators** — never `outline: none` without replacing it with something visible. The `:focus-visible` pseudo-class lets you show focus only for keyboard users.
+- **Focus trapping** in modals — focus stays inside the modal until dismissed. The native `<dialog>` element with `showModal()` handles this for free.
+
+### Forms
+
+```html
+<label for="email">Email</label>
+<input id="email" name="email" type="email" autocomplete="email" required
+       aria-describedby="email-error" aria-invalid="false">
+<p id="email-error" role="alert" hidden>Please enter a valid email.</p>
+```
+
+- **Always** label inputs (visible `<label for>` is best; `aria-label` is fallback).
+- Use the right `type` (`email`, `tel`, `url`, `number`, `date`) — gets you mobile keyboard layouts and validation.
+- Use `autocomplete` values from the [WHATWG list](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#autofill).
+- Show errors inline near the field, with `aria-describedby` linking field → error message and `role="alert"` on the message.
+- Don't disable the submit button until the form is valid — it leaves users guessing why nothing happens. Show validation messages on submit attempt.
+
+### Reduced motion
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+```
+
+Some users get nauseous from parallax / spring animations. Respect their preference.
+
+### Common a11y interview prompts
+
+- "How would you make a custom dropdown accessible?" → `<button aria-expanded>` trigger; managed `aria-activedescendant` or roving `tabindex` for option navigation; `Esc` closes; focus returns to trigger on close.
+- "Native dialog vs a custom modal?" → Always prefer `<dialog>` + `showModal()` — focus trap + scroll lock + Esc + backdrop are free. Custom modals usually leak focus to the page below.
+- "What's the difference between `aria-hidden` and `hidden`?" → `hidden` removes from layout AND a11y tree. `aria-hidden="true"` removes from a11y tree only (still visible / interactive — usually a bug).
+- "How do you announce a route change in an SPA?" → set focus to the new page's `<h1>` and update `<title>`; optionally use an `aria-live` region for the new page name.
+- "Why is `aria-label` overused?" → it overrides visible text for screen readers, easy to drift out of sync, and HTML elements already have semantics. Reach for it only when there's no visible label.
+
+## Interaction design fundamentals
+
+Things every senior FE should know but rarely studies formally.
+
+### Fitts's Law
+
+Time to point at a target = `a + b * log2(distance / size + 1)`. Practical takeaways:
+
+- **Bigger targets are faster to click.** Mobile minimum: 44×44 pt (Apple HIG) or 48dp (Material).
+- **Edge / corner targets are infinite-sized** (you can fling the mouse there). Why menu bars sit at the screen top on macOS.
+- **Don't put two destructive buttons next to each other.** Separate "Delete" from anything else by space + visual weight.
+
+### Hick's Law
+
+Choice complexity grows with options. Practical: limit visible choices, group related items, surface the most-likely action.
+
+### Loading states (the four)
+
+1. **Skeleton screens** — shaped placeholders matching the upcoming content. Best for above-the-fold content with predictable shape.
+2. **Spinners** — for async work whose duration you can't predict. Use sparingly.
+3. **Progress bars** — for known-duration work (uploads, downloads).
+4. **Optimistic updates** — assume success, render immediately, revert if the request fails. Best UX when the failure rate is low.
+
+React 19 helps with all of these (`useOptimistic`, `useFormStatus`, `useTransition`).
+
+### Empty states
+
+A blank list isn't a state — it's three states, and the UI should distinguish them:
+
+1. **Loading** — fetching for the first time.
+2. **No data exists** — there's nothing here yet; show a CTA ("Create your first ___").
+3. **No results match a filter** — your query matched nothing; show "Clear filter" or "Try a different search."
+
+Confusing these is a top UX bug.
+
+### Error states
+
+- **Inline at the source.** Field-level errors next to the field, not in a banner at the top.
+- **What went wrong** + **what to do about it.** "Email already taken — try logging in instead?" beats "Validation failed."
+- **Don't blame the user.** Most "user errors" are actually UX bugs (unclear constraint, no inline validation, wrong input type for the data).
+
+## Design system literacy
+
+You're not designing the system — you're consuming it. But every senior FE should be fluent.
+
+### Design tokens
+
+The atomic vocabulary of the system. Semantic over literal:
+
+```css
+/* ✗ Literal — breaks if the design changes */
+.button { background: #1e40af; }
+
+/* ✓ Semantic — survives a redesign */
+.button { background: var(--color-primary); }
+```
+
+Tokens have layers: **primitive** (raw values like `blue-700`) → **semantic** (`color-primary`, `color-text-on-primary`) → **component** (`button-primary-bg`).
+
+Tools: Tailwind v4's `@theme`, CSS custom properties, [Style Dictionary](https://amzn.github.io/style-dictionary/) for cross-platform.
+
+### Component composition
+
+Modern FE component libraries (shadcn/ui, Radix, Ariakit, Headless UI) lean into **composition over configuration**:
+
+```tsx
+// ✗ Configuration-style: 30 props for every variant
+<Modal title="..." showClose closeOnEsc actions={[...]}>
+
+// ✓ Composition-style: small parts, you assemble them
+<Dialog>
+  <DialogTrigger asChild><Button>Open</Button></DialogTrigger>
+  <DialogContent>
+    <DialogHeader>...</DialogHeader>
+    <DialogFooter>...</DialogFooter>
+  </DialogContent>
+</Dialog>
+```
+
+Composition wins because (a) the consumer can extend any part, (b) the API doesn't grow with edge cases, (c) it matches HTML's own composition (e.g., `<dialog>` + `<form method="dialog">`).
+
+## Common UX/UI interview prompts
+
+- "Walk me through the accessibility considerations for [a custom component]." → semantic element first; keyboard model; focus management; ARIA only where needed; contrast.
+- "What's the difference between UX and UI?" → UI is the surface (visual + interaction); UX is the experience (does the user achieve their goal efficiently). UI is one input to UX.
+- "How would you A/B test a redesign?" → split traffic, define a single primary metric (conversion rate, time-to-task), don't change too much at once, watch guardrail metrics.
+- "How do you handle loading and error states?" → name the four loading patterns; for errors, inline + actionable + non-blaming.
+- "What's a design system, and what should be in it?" → tokens, components, patterns, documentation. The cheapest version: a Figma library + a component package + a docs site (Storybook is the default).
+
+## Further reading
+
+- [WCAG 2.2 — Quick Reference](https://www.w3.org/WAI/WCAG22/quickref/)
+- [WAI-ARIA Authoring Practices Guide (APG) — patterns](https://www.w3.org/WAI/ARIA/apg/patterns/)
+- [Inclusive Components — patterns by Heydon Pickering](https://inclusive-components.design/)
+- [WebAIM — Contrast Checker](https://webaim.org/resources/contrastchecker/)
+- [Refactoring UI](https://www.refactoringui.com/) — tactical visual-design pointers for engineers

@@ -1,0 +1,292 @@
+"use client";
+
+import {
+  useState,
+  useEffect,
+  useRef,
+  use,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  getSession,
+  updateSession,
+  endSession,
+  type InterviewSession,
+  type InterviewMessage,
+} from "@/lib/interviewSessions";
+
+const KICKOFF_PROMPT =
+  "Begin the interview now. Greet me briefly and ask your first JavaScript question.";
+
+export default function InterviewSessionPage({
+  params,
+}: {
+  params: Promise<{ sessionId: string }>;
+}) {
+  const { sessionId } = use(params);
+  const router = useRouter();
+
+  const [session, setSession] = useState<InterviewSession | null>(null);
+  const [input, setInput] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const kickedOffRef = useRef(false);
+
+  // Load session, redirect if missing, auto-kick the first question.
+  useEffect(() => {
+    const s = getSession(sessionId);
+    if (!s) {
+      router.replace("/interview");
+      return;
+    }
+    setSession(s);
+
+    if (
+      !kickedOffRef.current &&
+      s.messages.length === 0 &&
+      !s.endedAt
+    ) {
+      kickedOffRef.current = true;
+      void send([{ role: "user", content: KICKOFF_PROMPT }], s);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // Auto-scroll on transcript updates.
+  useEffect(() => {
+    transcriptRef.current?.scrollTo({
+      top: transcriptRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [session?.messages]);
+
+  async function send(
+    newMessages: InterviewMessage[],
+    baseSession: InterviewSession,
+  ) {
+    setError(null);
+    setIsStreaming(true);
+
+    const messagesAfterUser: InterviewMessage[] = [
+      ...baseSession.messages,
+      ...newMessages,
+    ];
+
+    // Optimistic update: user msg + empty assistant placeholder
+    const optimistic: InterviewSession = {
+      ...baseSession,
+      messages: [
+        ...messagesAfterUser,
+        { role: "assistant", content: "" },
+      ],
+    };
+    setSession(optimistic);
+    updateSession(baseSession.id, { messages: optimistic.messages });
+
+    try {
+      const res = await fetch("/api/ai/interview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: messagesAfterUser }),
+      });
+
+      if (!res.ok || !res.body) {
+        const errBody = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let assistantContent = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const chunk = JSON.parse(trimmed) as {
+              message?: { content?: string };
+            };
+            const piece = chunk.message?.content;
+            if (piece) {
+              assistantContent += piece;
+              setSession((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      messages: [
+                        ...prev.messages.slice(0, -1),
+                        { role: "assistant", content: assistantContent },
+                      ],
+                    }
+                  : prev,
+              );
+            }
+          } catch {
+            // ignore partial-line parse errors
+          }
+        }
+      }
+
+      const finalMessages: InterviewMessage[] = [
+        ...messagesAfterUser,
+        { role: "assistant", content: assistantContent },
+      ];
+      updateSession(baseSession.id, { messages: finalMessages });
+      setSession((prev) =>
+        prev ? { ...prev, messages: finalMessages } : prev,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setError(msg);
+      // Roll back the empty assistant placeholder so the user can retry.
+      setSession((prev) =>
+        prev
+          ? { ...prev, messages: messagesAfterUser }
+          : prev,
+      );
+      updateSession(baseSession.id, { messages: messagesAfterUser });
+    } finally {
+      setIsStreaming(false);
+    }
+  }
+
+  function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!input.trim() || isStreaming || !session) return;
+    const userMessage: InterviewMessage = {
+      role: "user",
+      content: input.trim(),
+    };
+    setInput("");
+    void send([userMessage], session);
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit(e as unknown as FormEvent);
+    }
+  }
+
+  function handleEnd() {
+    if (!session || isStreaming) return;
+    endSession(session.id);
+    setSession({ ...session, endedAt: Date.now() });
+  }
+
+  if (!session) {
+    return <p className="text-muted-foreground">Loading session…</p>;
+  }
+
+  const visibleMessages = session.messages.filter(
+    (m) => m.role !== "system" && m.content !== KICKOFF_PROMPT,
+  );
+
+  return (
+    <div className="flex flex-col gap-4 h-[calc(100vh-12rem)]">
+      <header className="flex items-center justify-between">
+        <Link
+          href="/interview"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          ← All sessions
+        </Link>
+        <div className="flex items-center gap-3 text-sm">
+          {session.endedAt ? (
+            <span className="text-muted-foreground">Session ended</span>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleEnd}
+              disabled={isStreaming}
+            >
+              End session
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <div
+        ref={transcriptRef}
+        className="flex-1 min-h-0 overflow-y-auto space-y-4 rounded-lg border border-border bg-card p-4"
+      >
+        {visibleMessages.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Waiting for the interviewer…
+          </p>
+        )}
+        {visibleMessages.map((m, i) => (
+          <Message key={i} message={m} />
+        ))}
+        {isStreaming &&
+          session.messages[session.messages.length - 1]?.content === "" && (
+            <p className="text-xs text-muted-foreground">
+              Interviewer is thinking…
+            </p>
+          )}
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {!session.endedAt && (
+        <form onSubmit={handleSubmit} className="space-y-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type your answer…"
+            className="min-h-24 resize-none"
+            disabled={isStreaming}
+          />
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              ⌘/Ctrl + Enter to send
+            </p>
+            <Button
+              type="submit"
+              disabled={!input.trim() || isStreaming}
+            >
+              {isStreaming ? "Streaming…" : "Send"}
+            </Button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function Message({ message }: { message: InterviewMessage }) {
+  const isUser = message.role === "user";
+  return (
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 whitespace-pre-wrap ${
+          isUser
+            ? "bg-primary text-primary-foreground"
+            : "bg-muted text-foreground"
+        }`}
+      >
+        {message.content || "…"}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,8 @@
+{
+  "slug": "resilient-fetch",
+  "title": "Resilient Fetch Wrapper",
+  "tags": ["rest", "http", "async", "javascript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 30,
+  "concepts": ["fetch", "retry", "exponential-backoff", "AbortController", "error-handling"]
+}

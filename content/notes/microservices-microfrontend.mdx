@@ -1,0 +1,129 @@
+---
+title: "Microservices and Microfrontends"
+tags: ["microservices", "microfrontend", "architecture", "system-design", "interviews"]
+related: ["rest-apis", "node-server-side"]
+---
+
+Microservices and microfrontends apply the same idea — split a system into independently deployable pieces — to different layers. This note covers what they are, when each pays off, the patterns that make them work, and the trade-offs interviewers want to hear you reason about.
+
+## Microservices
+
+A **microservice** is a small, independently deployable backend service that owns a bounded chunk of business logic and its own data store. The unit of deploy = the unit of ownership = the unit of failure.
+
+### What you trade for what
+
+| You get | You pay |
+|---|---|
+| Independent deploy cadence per team | Network calls between things that used to be in-process |
+| Independent scaling per workload | Distributed-system failure modes (partial failure, retries, timeouts) |
+| Tech stack flexibility per service | Operational complexity (observability, deployments, secrets, identity) |
+| Smaller blast radius for bugs | Cross-service data consistency (no more `BEGIN TRANSACTION`) |
+| Clearer team boundaries | Versioning and contract evolution between services |
+
+The honest answer in interviews: **microservices buy you organizational scaling, not technical scaling.** A well-built monolith handles enormous load; what it can't handle well is 50 teams shipping to it independently.
+
+### When microservices pay off
+
+- You have **multiple teams** that need to ship without coordinating with each other.
+- You have **workloads with very different scaling profiles** (e.g., a CPU-heavy ML service vs. a web tier vs. a low-traffic admin tool).
+- You have **truly independent bounded contexts** (Domain-Driven Design language) — a "billing" service that doesn't share data models with "fulfillment" or "search."
+
+### When they don't
+
+- **Small team / single team.** The coordination overhead between services costs more than the in-process call you replaced.
+- **Tightly coupled domains** that always change together. You'll end up making 3 PRs to "ship a feature."
+- **No production-grade platform.** Microservices need observability (tracing, structured logs, metrics), service discovery, deploy automation, secrets management. Without that, you have a distributed monolith and worse outages.
+
+### Patterns that come up in interviews
+
+**Bounded context** (DDD) — a service owns a model that's coherent within its boundary. The same word ("Order") may mean different things in different services and that's fine — they translate at the edge.
+
+**API gateway / BFF (Backend-for-Frontend)** — a thin layer in front of services that aggregates / reshapes responses for a specific client (web, mobile). Lets clients stay simple while services stay focused.
+
+**Service mesh** (Istio, Linkerd) — sidecar proxies that handle mTLS, retries, circuit breaking, traffic shifting, and tracing without app code changes.
+
+**Sync vs. async communication:**
+
+| | Sync (HTTP / gRPC) | Async (queues, events) |
+|---|---|---|
+| **Coupling** | Caller knows callee | Producer doesn't know consumers |
+| **Failure mode** | Caller waits, may time out | Decoupled — broker absorbs spikes |
+| **Use for** | Reads, simple writes | Workflows, fan-out, eventual consistency |
+
+A common architecture: sync for read paths, async (events on Kafka / SNS-SQS / NATS) for write fan-out and workflow orchestration.
+
+**Sagas** — multi-service business transactions implemented as a sequence of local transactions + compensating actions. Replaces the impossible "distributed `BEGIN TRANSACTION`."
+
+**Idempotency** — every write endpoint must be safe to retry. See the [REST APIs note](/notes/rest-apis) on idempotency keys.
+
+**Outbox pattern** — to avoid "we updated the DB but the event publish failed" races: write the event row to an `outbox` table in the same transaction as the data change, then a relay process publishes from the outbox. Guarantees at-least-once event delivery.
+
+### Operational baseline (what every microservice setup needs)
+
+- **Distributed tracing** (OpenTelemetry → Jaeger / Tempo / Honeycomb). Without traces, debugging a failed request that touched 6 services is hopeless.
+- **Centralized structured logs** with a request-correlation ID propagated across hops.
+- **Metrics** at the RED level (Rate, Errors, Duration) per service.
+- **Health endpoints** (`/healthz`, `/readyz`) so the orchestrator knows when to route traffic.
+- **Graceful shutdown** so rolling deploys don't drop in-flight requests.
+
+## Microfrontends
+
+A **microfrontend** is the same idea applied to the front end: split a web app so different teams own different pieces of the UI and ship them independently.
+
+### Composition strategies
+
+| Where | Tech | Use when |
+|---|---|---|
+| **Build-time** | npm packages composed into a single shell at build | One team owns shared deploys; you want a single bundle |
+| **Server-side composition** | Edge includes / server fragments (e.g., Astro islands, Tailcall, fragment-based ESI) | You can SSR each piece independently |
+| **Runtime via iframe** | One iframe per micro-app | Hard isolation needed; minimal interop required |
+| **Runtime via Module Federation** | Webpack 5 / Rspack / Vite Module Federation; shared dependencies negotiated at runtime | Multiple teams need to ship features into the same SPA shell on independent cadences |
+
+[**Module Federation**](https://webpack.js.org/concepts/module-federation/) is the most-cited modern approach. The shell ("host") loads remote bundles at runtime; remotes can publish whenever they want. Shared deps (`react`, `react-dom`) are negotiated so you don't ship 3 copies of React.
+
+[**Single-spa**](https://single-spa.js.org/) is an older orchestrator that supports mixing frameworks (React + Vue + Angular in one shell). Most teams converging on Module Federation now.
+
+### When microfrontends pay off
+
+- **Multiple teams** owning distinct user-facing areas (think: product team, billing team, admin team — three separate apps mounted under one chrome).
+- **Independent deploy needs** — billing team must ship without coordinating with product team.
+- **Different tech stacks per team** are an actual constraint (rare).
+
+### When they don't
+
+- **Single team / single product surface.** A Next.js or Remix app gives you fast independent route deploys (especially with Vercel / Netlify) without any of the federation complexity.
+- **Strongly shared design system** that needs lockstep updates. Multiple bundles fighting over a shared lib version is painful.
+- **Latency-sensitive surfaces.** Each remote bundle is an extra network round-trip; even with HTTP/2 multiplexing, the total cost is real.
+
+### The trade-offs that come up in interviews
+
+| You get | You pay |
+|---|---|
+| Independent deploys per team | Larger total JS payload (duplicated code, shared-dep negotiation) |
+| Tech-stack flexibility per team | Coordination on shared design tokens, auth, routing, analytics |
+| Fault isolation (one remote down ≠ whole app down, with care) | Cross-team type sharing is hard; runtime contract = runtime breakage |
+| Smaller per-team mental model | Performance budget management gets harder |
+
+**Common pitfall:** you didn't actually have an organizational problem, but you adopted microfrontends anyway. The result is a single team paying coordination tax across 4 repos with no benefit.
+
+## Common interview prompts
+
+- "When would you split a monolith into microservices?" → multiple teams stepping on each other's deploys; workloads with very different scaling needs; tech-stack diversity actually required.
+- "What problems do microservices introduce?" → distributed-system failure modes, cross-service consistency, deployment/observability complexity, contract versioning.
+- "How do you handle a transaction across two services?" → you don't. Use a saga + compensations, or an outbox + eventual consistency.
+- "What's the difference between an API gateway and a service mesh?" → gateway sits at the edge, faces clients (BFF, auth, rate limit). Mesh sits between services (mTLS, retries, tracing) — sidecar proxies.
+- "Why microfrontends instead of just a monorepo?" → monorepo gives you shared code; microfrontends give you **independent deploys and runtime composition**. Pick monorepo + good route-level code splitting unless the deploy independence really matters.
+- "Module Federation vs iframes?" → iframes are hardest isolation (separate JS contexts, separate CSS) but worst interop. Module Federation shares JS context and dependencies; better DX, more coupling.
+- "How do you handle shared state across microfrontends?" → minimize it. Where unavoidable: a shared event bus / pub-sub, or a shared store exposed by the shell. Avoid runtime imports of "the auth store" across remotes — that's the coupling MFE was supposed to break.
+
+## The honest summary
+
+Both microservices and microfrontends solve **organizational** problems first, **technical** problems second. If you don't have the organizational pain (many teams, independent deploy cadences, distinct domains), the simpler answer is almost always: a well-modularized monolith on the back end, a well-route-split SPA or SSR app on the front end. Reach for split-deploy architectures when your team structure makes them inevitable, not before.
+
+## Further reading
+
+- [Sam Newman — *Building Microservices*](https://samnewman.io/books/building_microservices_2nd_edition/) (the canonical reference)
+- [martinfowler.com — Microservices guide](https://martinfowler.com/microservices/)
+- [microfrontends.org](https://micro-frontends.org/) — Cam Jackson's introduction
+- [Webpack docs — Module Federation](https://webpack.js.org/concepts/module-federation/)
+- [Single-SPA — docs](https://single-spa.js.org/docs/getting-started-overview)

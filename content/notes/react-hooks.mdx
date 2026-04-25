@@ -1,0 +1,161 @@
+---
+title: "React Hooks: Deep Dive (incl. React 19)"
+tags: ["react", "hooks", "react-19"]
+related: ["state-management", "concurrent-react", "server-components"]
+---
+
+Hooks are React's way of letting function components opt into stateful, lifecycle, and context behavior — without writing classes. React 19 (released Dec 2024) added several new hooks aimed at the "form + async + optimistic UI" pattern that used to require painful boilerplate.
+
+This note covers the core hooks every interviewer expects, plus the React 19 additions that signal you've kept up.
+
+## The Rules of Hooks (still apply)
+
+1. **Call hooks at the top level** — never inside loops, conditions, or nested functions.
+2. **Call hooks only from React functions** — components or other custom hooks.
+
+The exception: the new `use()` hook (see below) intentionally breaks rule #1.
+
+## Core hooks (table-stakes)
+
+### `useState` — local state
+
+```jsx
+const [count, setCount] = useState(0);
+```
+
+Returns the value + a setter. The setter accepts a new value or an updater function (`setCount(c => c + 1)`). Use the updater form whenever the new state depends on the previous one — it's the safe answer in async or batched contexts.
+
+### `useEffect` — side effects after render
+
+```jsx
+useEffect(() => {
+  const sub = subscribe();
+  return () => sub.unsubscribe();   // cleanup
+}, [dep]);
+```
+
+Runs after the DOM is committed. The cleanup runs before the next effect AND on unmount. Empty `[]` = run once on mount. Omit deps array = run after every render (almost always wrong).
+
+### `useRef` — mutable box that survives renders
+
+```jsx
+const ref = useRef(null);
+ref.current = newValue;   // doesn't trigger re-render
+```
+
+Two main uses: holding DOM nodes (`<input ref={ref} />`) and holding mutable values that shouldn't trigger renders (timer ids, previous values).
+
+### `useMemo` and `useCallback` — caching
+
+Skip until you've measured a perf problem. They have a cost. `useMemo` caches a computed value; `useCallback` caches a function reference. Both invalidate when their deps change.
+
+### `useContext` — read context
+
+```jsx
+const theme = useContext(ThemeContext);
+```
+
+Subscribes the component to a context. Re-renders whenever the value's reference changes.
+
+## React 19 additions (interview-differentiating)
+
+### `useActionState` — replaces useFormState + isLoading + error state
+
+The "I'm submitting a form and I want to track pending/error/result" pattern used to require 3+ `useState` calls. `useActionState` rolls them into one.
+
+```jsx
+async function submitAction(prevState, formData) {
+  const name = formData.get("name");
+  const result = await api.save({ name });
+  return { ok: true, name: result.name };
+}
+
+function MyForm() {
+  const [state, dispatch, isPending] = useActionState(submitAction, null);
+  return (
+    <form action={dispatch}>
+      <input name="name" />
+      <button disabled={isPending}>Save</button>
+      {state?.ok && <p>Saved {state.name}</p>}
+    </form>
+  );
+}
+```
+
+Returns `[lastResult, dispatchAction, isPending]`. Pair with React 19's new `<form action={fn}>` for zero-boilerplate form handling.
+
+### `useOptimistic` — show the result before the network confirms
+
+```jsx
+function Likes({ likes }) {
+  const [optimistic, addOptimistic] = useOptimistic(
+    likes,
+    (current, increment) => current + increment
+  );
+
+  async function handleLike() {
+    addOptimistic(1);            // UI updates IMMEDIATELY
+    await api.like();            // server catches up
+  }
+
+  return <button onClick={handleLike}>❤️ {optimistic}</button>;
+}
+```
+
+The optimistic state reverts automatically if the action throws or the operation completes. Best paired with server actions.
+
+### `use()` — read promises and contexts inside render
+
+```jsx
+function Notes({ promise }) {
+  const notes = use(promise);   // suspends until resolved
+  return notes.map(/* ... */);
+}
+```
+
+Two superpowers:
+
+1. **Reads promises** — combined with `<Suspense>`, lets you write data-fetching components that look synchronous.
+2. **Conditional / loop-safe** — `use()` deliberately breaks the "no hooks in loops or conditions" rule. The only hook that does.
+
+### `useFormStatus` — read pending state of the parent form (no prop drilling)
+
+```jsx
+function SubmitButton() {
+  const { pending } = useFormStatus();   // reads from the nearest <form>
+  return <button disabled={pending}>Submit</button>;
+}
+```
+
+Lives in `react-dom`, not `react`. Useful when the submit button is deep inside a form and you don't want to thread `isPending` props down.
+
+## Custom hooks: extract, don't repeat
+
+If you find yourself repeating a pattern of `useState` + `useEffect` + cleanup across components, extract it as `useFoo()`. The naming convention (`use*`) tells React (and ESLint) to apply Rules of Hooks.
+
+```jsx
+function useLocalStorage(key, initial) {
+  const [value, setValue] = useState(() => {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : initial;
+  });
+  useEffect(() => {
+    localStorage.setItem(key, JSON.stringify(value));
+  }, [key, value]);
+  return [value, setValue];
+}
+```
+
+## Common interview pitfalls
+
+- **Stale closure over state** — using a state value in `setInterval` without cleanup. Fix with the updater form: `setCount(c => c + 1)`.
+- **Missing dep array entries** — ESLint's `react-hooks/exhaustive-deps` is your friend, not your enemy. If you're tempted to disable it, you usually have a real bug.
+- **`useEffect` for derived state** — if a value can be computed from props/state, derive it during render, don't store it in state + `useEffect`.
+- **Confusing `useRef` mutation with re-render** — mutating `ref.current` doesn't trigger a render. If you need a render, use state.
+
+## Sources
+
+- [React 19 — official docs (react.dev)](https://react.dev/blog/2024/12/05/react-19)
+- [Deep Dive into React 19's Latest Hooks (Medium)](https://medium.com/@rohitkuwar/deep-dive-into-react-19s-latest-hooks-use-useactionstate-useoptimistic-and-useformstatus-849395af9c11)
+- [Guide to New Hooks in React 19 (Telerik)](https://www.telerik.com/blogs/guide-new-hooks-react-19)
+- [useOptimistic — React reference](https://react.dev/reference/react/useOptimistic)

@@ -1,0 +1,28 @@
+---
+title: "Implement debounce"
+---
+
+Implement a `debounce(fn, delay)` utility — a higher-order function that returns a new function. The returned function delays invoking `fn` until `delay` milliseconds have elapsed since its **last** call. Subsequent calls within that window reset the timer.
+
+This is a classic frontend interview question — debounce shows up everywhere from search-as-you-type to window-resize handlers.
+
+## Behavior
+
+```js
+const debounced = debounce(handler, 100);
+
+debounced();   // schedules handler for 100ms from now
+debounced();   // resets the timer
+debounced();   // resets again
+// ...100ms after the last call, handler runs ONCE.
+```
+
+## Requirements
+
+- After `delay` ms with no further calls, `fn` should be invoked exactly once.
+- Each new call within the window cancels the prior pending invocation.
+- Arguments passed to the debounced function should be forwarded to `fn` (use the most recent call's arguments).
+
+## Hint
+
+You'll need a closure to hold the timer id between calls. `setTimeout` returns an id you can pass to `clearTimeout`.

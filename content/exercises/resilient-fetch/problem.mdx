@@ -1,0 +1,40 @@
+---
+title: "Resilient Fetch Wrapper"
+---
+
+Build `request(url, options)` — a `fetch` wrapper with the resilience real-world API clients need.
+
+## Requirements
+
+- Returns the parsed JSON body on a 2xx response.
+- **Retries on retryable failures:** network errors (thrown from `fetch`), `429 Too Many Requests`, and any `5xx` status. Up to `options.retries` times (default `3`).
+- **Does not retry on non-retryable client errors:** `400`, `401`, `403`, `404`, `409`, `422`, etc. Throw immediately.
+- **Exponential backoff with jitter** between retries: roughly `baseDelayMs * 2^attempt + random(0, baseDelayMs)`.
+- **Honors `Retry-After`** on `429`/`503` responses (use that delay instead of the calculated backoff). Treat the value as seconds.
+- **Per-attempt timeout** via `AbortController` (default `10000` ms).
+- After all retries are exhausted, throw an `Error` describing the failure.
+
+## Options shape
+
+```js
+request("/api/orders", {
+  retries: 3,         // max retry attempts (default 3)
+  baseDelayMs: 100,   // base for exponential backoff (default 100)
+  timeoutMs: 10000,   // per-attempt timeout (default 10000)
+  // any other fetch options (method, headers, body, signal, etc.) are forwarded
+});
+```
+
+## Why this matters in interviews
+
+This problem touches things every backend / full-stack interview probes:
+
+- **Async control flow** — loops with `await`, not `.then()` chains.
+- **Error classification** — knowing which failures are worth retrying.
+- **Timeout via `AbortController`** — the modern way to bail on a slow request.
+- **Backoff strategy** — why jitter exists ([thundering herd](https://en.wikipedia.org/wiki/Thundering_herd_problem)).
+- **HTTP status awareness** — see the [RESTful APIs note](/notes/rest-apis) for the full status-code rundown.
+
+## Hint
+
+Structure it as a `while (true)` loop with `attempt` counted up. Each iteration: try `fetch`, classify the outcome (success, non-retryable error, retryable error, network error), and either return, throw, or `await sleep(delay)` and continue.

@@ -1,0 +1,286 @@
+---
+title: "MongoDB for Full-Stack Interviews"
+tags: ["mongodb", "database", "nosql", "node", "backend", "interviews"]
+related: ["rest-apis", "node-server-side"]
+---
+
+MongoDB is the most-asked NoSQL database in front-end / full-stack interviews. This note covers the document model, CRUD, the query and update operators that come up, the aggregation pipeline, indexes, schema design (embed vs reference), and when *not* to reach for it.
+
+## What it actually is
+
+A **document database**. Records are JSON-shaped (technically BSON — binary JSON with extra types like `Date`, `ObjectId`, `Decimal128`). Documents live in **collections**, which live in **databases**. No schema enforced by default (you can add JSON Schema validators per collection if you want).
+
+```js
+// One document
+{
+  _id: ObjectId("66e1c8a4f1d2e3b4c5d6e7f8"),
+  email: "alice@example.com",
+  profile: { name: "Alice", joined: ISODate("2026-01-15") },
+  roles: ["editor", "viewer"]
+}
+```
+
+`_id` is mandatory, unique within the collection. If you don't supply one, MongoDB generates an `ObjectId` (12-byte: 4-byte timestamp + 5-byte random + 3-byte counter) — these are roughly time-sortable.
+
+## Document model vs RDBMS (the interview question)
+
+| | RDBMS (Postgres/MySQL) | MongoDB |
+|---|---|---|
+| **Unit** | Row in a table | Document in a collection |
+| **Schema** | Enforced by table DDL | Optional; per-collection validator if you want |
+| **Joins** | First-class (`JOIN ... ON`) | `$lookup` in aggregation pipeline; usually avoided in favor of embedding |
+| **Transactions** | Multi-row, multi-table by default | Multi-document since 4.0; multi-shard since 4.2; cheap-but-not-free |
+| **Indexes** | Primary key + indexes | `_id` always indexed + compound/multi-key/text/geo |
+| **Best at** | Strong relations, strict schemas, complex joins | Variable shapes, hierarchical/nested data, fast iteration on schema |
+
+The honest answer in interviews: "MongoDB is great when documents are mostly self-contained and accessed together. It struggles when your data is highly relational and you need many joins — that's when Postgres is the right call."
+
+## CRUD
+
+```js
+// Create
+await db.users.insertOne({ email: "a@b.com", roles: ["viewer"] });
+await db.users.insertMany([{ ... }, { ... }]);
+
+// Read
+await db.users.find({ active: true }).toArray();         // many
+await db.users.findOne({ _id: ObjectId(id) });           // one
+await db.users.countDocuments({ active: true });
+
+// Update
+await db.users.updateOne(
+  { _id: ObjectId(id) },
+  { $set: { lastLoginAt: new Date() }, $inc: { loginCount: 1 } }
+);
+await db.users.updateMany({ active: false }, { $set: { archived: true } });
+
+// Upsert (insert if missing)
+await db.users.updateOne(
+  { email: "a@b.com" },
+  { $setOnInsert: { createdAt: new Date() }, $set: { lastSeenAt: new Date() } },
+  { upsert: true }
+);
+
+// Delete
+await db.users.deleteOne({ _id: ObjectId(id) });
+await db.users.deleteMany({ archived: true });
+```
+
+A few traps:
+- `update*` requires an **operator** (`$set`, `$inc`, etc.) — passing a raw object replaces the whole document with `replaceOne` semantics. The driver throws if you forget `$set` on `updateOne`.
+- `find()` returns a **cursor**, not an array. Call `.toArray()` or iterate.
+- `findOne` returns the document or `null`, never throws on missing.
+
+## Query operators
+
+| Operator | Meaning |
+|---|---|
+| `$eq`, `$ne` | equal / not equal |
+| `$gt`, `$gte`, `$lt`, `$lte` | comparison |
+| `$in`, `$nin` | value is/isn't in array |
+| `$exists` | field is/isn't present |
+| `$type` | field is of BSON type |
+| `$regex` | regex match (use `^` to keep it indexable) |
+| `$and`, `$or`, `$nor`, `$not` | logical |
+| `$elemMatch` | array element matches all sub-conditions |
+| `$all` | array contains all of these values |
+| `$size` | array has this length |
+
+```js
+// users 18+ with role admin or owner, active, with no archivedAt
+db.users.find({
+  age: { $gte: 18 },
+  $or: [{ role: "admin" }, { role: "owner" }],
+  active: true,
+  archivedAt: { $exists: false }
+});
+
+// orders containing at least one item where qty > 5 AND sku starts with "A"
+db.orders.find({
+  items: { $elemMatch: { qty: { $gt: 5 }, sku: { $regex: /^A/ } } }
+});
+```
+
+Implicit `AND`: top-level fields are AND-ed together. `$or` is the way to express OR.
+
+## Update operators
+
+| Operator | Use |
+|---|---|
+| `$set`, `$unset` | set/remove a field |
+| `$inc`, `$mul` | atomic increment / multiply |
+| `$min`, `$max` | set if new value is smaller/larger |
+| `$push`, `$addToSet` | append to array (`$addToSet` dedupes) |
+| `$pull`, `$pop` | remove from array (`$pull` by query, `$pop` head/tail) |
+| `$rename` | rename a field |
+| `$currentDate` | set to server time (avoids client clock skew) |
+
+These are atomic at the document level. Two clients incrementing `$inc: { count: 1 }` on the same doc will both succeed without lost updates.
+
+## Aggregation pipeline
+
+A list of stages; the output of each feeds the next. The Swiss army knife of MongoDB queries.
+
+```js
+db.orders.aggregate([
+  { $match: { status: "shipped", createdAt: { $gte: ISODate("2026-01-01") } } },
+  { $group: { _id: "$customerId", total: { $sum: "$amount" }, count: { $sum: 1 } } },
+  { $sort: { total: -1 } },
+  { $limit: 10 },
+  { $lookup: {
+      from: "customers",
+      localField: "_id",
+      foreignField: "_id",
+      as: "customer"
+  } },
+  { $project: { _id: 0, customer: { $arrayElemAt: ["$customer", 0] }, total: 1, count: 1 } }
+]);
+```
+
+**Stages worth memorizing:**
+
+| Stage | Does |
+|---|---|
+| `$match` | Filter (use as early as possible — uses indexes) |
+| `$project` | Reshape fields, compute new ones |
+| `$group` | Aggregate by key with `$sum`, `$avg`, `$min`, `$max`, `$push`, `$addToSet` |
+| `$sort` | Sort (uses indexes if early) |
+| `$limit`, `$skip` | Pagination (use cursor pagination instead at scale) |
+| `$lookup` | Join another collection |
+| `$unwind` | Explode an array field into one document per element |
+| `$facet` | Run multiple sub-pipelines on the same input (e.g., totals + page slice) |
+| `$addFields` | Add computed fields without removing existing ones |
+| `$out`, `$merge` | Write results to a collection |
+
+**Pipeline rules of thumb:**
+- `$match` first, always. Then `$project` to drop fields you don't need.
+- `$sort` benefits from a compound index on the sort fields.
+- `$lookup` is cheaper now (indexed for simple `localField`/`foreignField` cases since 6.0+), but still avoid it as a `JOIN` substitute on hot paths — embed instead.
+- For huge `$group`s, set `{ allowDiskUse: true }` or you'll hit the in-memory sort cap.
+
+## Indexes
+
+```js
+db.users.createIndex({ email: 1 }, { unique: true });
+db.orders.createIndex({ customerId: 1, createdAt: -1 });           // compound
+db.posts.createIndex({ tags: 1 });                                 // multi-key (array field)
+db.notes.createIndex({ title: "text", body: "text" });             // text search
+db.places.createIndex({ location: "2dsphere" });                   // geospatial
+```
+
+**Compound index direction matters for sort.** `{ a: 1, b: -1 }` covers `sort({ a: 1, b: -1 })` and `sort({ a: -1, b: 1 })` (reverse), but not `sort({ a: 1, b: 1 })`.
+
+**ESR rule** for compound indexes (Mongo's official guidance): list fields in **E**quality first, then **S**ort, then **R**ange. So for `find({ status: "active" }).sort({ createdAt: -1 })` filtering by `age: { $gt: 18 }`, the index is `{ status: 1, createdAt: -1, age: 1 }`.
+
+Always check `db.coll.find(...).explain("executionStats")` to confirm an index is being used (`stage: "IXSCAN"`, not `"COLLSCAN"`).
+
+## Schema design: embed vs reference
+
+The single most common interview question.
+
+**Embed** when:
+- Data is **read together** with the parent (e.g., comments on a blog post, line items on an order).
+- The child can't grow unboundedly (16 MB document limit).
+- Updates to the child are rare or always happen via the parent.
+
+**Reference** (store an `_id` link, fetch separately or with `$lookup`) when:
+- The child is **shared** across parents (e.g., user → many comments across many posts).
+- The child grows over time without bound (e.g., a user's activity log).
+- The child has its own lifecycle and is queried independently.
+
+Concrete example: a **blog post with comments**. Embed if comments are bounded (typical blog); reference if it's Reddit-scale.
+
+```js
+// Embedded
+{ _id, title, body, comments: [{ author, body, createdAt }, ...] }
+
+// Referenced
+posts:    { _id, title, body }
+comments: { _id, postId, author, body, createdAt }
+```
+
+The trade-off is always: **fewer queries (embed) vs. fewer duplicates and unbounded growth (reference)**.
+
+## Atomicity and transactions
+
+- A single document write (even with `$inc`, `$push`, etc.) is **atomic**.
+- Multi-document operations are *not* atomic by default.
+- For multi-document atomicity, use a **transaction** (4.0+, replica set required, sharded since 4.2):
+
+```js
+const session = client.startSession();
+try {
+  await session.withTransaction(async () => {
+    await db.accounts.updateOne(
+      { _id: from }, { $inc: { balance: -amount } }, { session }
+    );
+    await db.accounts.updateOne(
+      { _id: to }, { $inc: { balance: amount } }, { session }
+    );
+  });
+} finally {
+  await session.endSession();
+}
+```
+
+Transactions cost overhead. The typical Mongo pattern is to **design schemas so most operations are single-document** (i.e., embed related data) and reach for transactions only when you really need them.
+
+## Native driver vs Mongoose
+
+- **`mongodb`** (official Node driver) — what you actually use to talk to the database. Lean, no schema, returns cursors.
+- **`mongoose`** — ODM on top of the driver. Adds JS-defined schemas, validation, hooks, virtual fields, populated relations. Enormously popular but heavier.
+
+In interviews: "I use the native driver when I want full control or am writing a thin layer; Mongoose when the team benefits from schema enforcement at the application level. They're not mutually exclusive — you can use both in the same app."
+
+## When *not* to pick MongoDB
+
+- **Strong relational data with many joins.** Postgres handles this in its sleep.
+- **Strict schema requirements** (financial ledgers, regulated data) — Postgres/SQL Server give you DDL guarantees.
+- **Strong typed queries with compile-time checks.** Postgres + Prisma/Drizzle is more rigorous.
+- **Tiny, fixed-shape data.** SQLite or even a flat JSON file may be enough.
+
+Mongo's sweet spot: variable-shape data, fast schema evolution, hierarchical documents, write-heavy workloads, geo or text search.
+
+## Atlas free tier vs self-hosted (since you'll need to pick)
+
+| | Atlas M0 (free) | Self-hosted (Homebrew local) |
+|---|---|---|
+| **Cost** | $0 forever (1 cluster per project) | $0 |
+| **Storage** | 512 MB | Disk-bound |
+| **Connections** | 500 max | Local-bound |
+| **Backups** | None on M0 | DIY |
+| **Reach** | Public (configurable IP allowlist) | localhost only |
+| **Atlas-only features** | Search (Lucene), Vector Search, Triggers, Charts | None |
+| **Use it for** | Hosted demos / Vercel deploys | Local dev, learning |
+
+For this prep workspace: **local Mongo via Homebrew** when you start on the Day 2 priority #5 (auth + persistence), then **Atlas M0** if you ever deploy publicly. Keep `mongod` shut off when you don't need it — it'll happily eat a couple hundred MB of RAM.
+
+```sh
+# Install (when ready — currently deferred per project notes)
+brew tap mongodb/brew
+brew install mongodb-community
+brew services start mongodb-community
+
+# Confirm
+mongosh                      # opens REPL on mongodb://localhost:27017
+db.test.insertOne({ ok: 1 })
+db.test.find()
+```
+
+## Common interview prompts
+
+- "What's the difference between SQL and NoSQL?" → schema, joins, transactions, scaling story. Don't say "Mongo doesn't have joins" — `$lookup` exists; the more accurate answer is "Mongo discourages joins in favor of embedding."
+- "Embed or reference?" → walk through the read pattern, write frequency, and whether the child can grow unboundedly.
+- "What's an `ObjectId`?" → 12 bytes, time-prefixed, roughly sortable, generated client-side.
+- "How do indexes work in Mongo?" → B-tree per index; ESR rule; check with `.explain()`.
+- "Aggregation vs. find?" → `find` is one query with filter/sort/limit/projection; `aggregate` is a pipeline of stages, can group/join/transform.
+- "How do transactions work in Mongo?" → multi-document since 4.0, replica-set-only, costly enough that you should design schemas to avoid them.
+- "Why might you choose Postgres over MongoDB?" → strong relations, strict schema, complex joins, mature constraint system.
+
+## Further reading
+
+- [MongoDB Manual — Aggregation Pipeline](https://www.mongodb.com/docs/manual/core/aggregation-pipeline/)
+- [MongoDB Manual — Data Modeling Best Practices](https://www.mongodb.com/docs/manual/data-modeling/best-practices/)
+- [MongoDB Manual — Aggregation Pipeline Optimization](https://www.mongodb.com/docs/manual/core/aggregation-pipeline-optimization/)
+- [Atlas Free Cluster Limits](https://www.mongodb.com/docs/atlas/reference/free-shared-limitations/)
+- [Embedded Data Versus References](https://www.mongodb.com/docs/manual/data-modeling/concepts/embedding-vs-references/)

@@ -1,0 +1,222 @@
+---
+title: "Modern HTML: What Changed Since 2008"
+tags: ["html", "frontend", "fundamentals", "modern", "accessibility"]
+related: ["semantic-html", "forms", "web-components"]
+---
+
+If your HTML knowledge is from the table-layout / `div` everywhere era, the language has gained a lot of native UI capability — modals, popovers, accordions, lazy-loading — that used to require JavaScript libraries. Almost everything in this note is **production-ready** across modern browsers (Chrome, Safari, Firefox, Edge).
+
+## Semantic structure (use these instead of `<div>`)
+
+```html
+<header>     <!-- top-level intro / navigation banner -->
+<nav>        <!-- primary navigation -->
+<main>       <!-- the unique content of the page (one per page) -->
+<article>    <!-- self-contained content (a post, a card, a comment) -->
+<section>    <!-- thematic grouping with a heading -->
+<aside>      <!-- tangential content (sidebars, callouts) -->
+<footer>     <!-- footer of the page or of an article/section -->
+<figure>     <!-- self-contained content + caption -->
+<figcaption> <!-- caption for a figure -->
+<time datetime="2026-04-25"> April 25 </time>  <!-- machine-readable dates -->
+<mark>       <!-- highlighted/marked text (search results) -->
+<search>     <!-- search/filter region (HTML 2024) -->
+```
+
+Why bother? Search engines, screen readers, and reader-mode all use the structure. `<div>` carries zero meaning; `<article>` tells a screen reader "this is a self-contained piece of content the user can navigate to."
+
+## Native modal: `<dialog>`
+
+Replaces homegrown modal libraries. Has built-in focus trapping, backdrop, and ESC-to-close.
+
+```html
+<dialog id="confirm">
+  <p>Delete this file?</p>
+  <form method="dialog">
+    <button value="cancel">Cancel</button>
+    <button value="ok">Delete</button>
+  </form>
+</dialog>
+
+<button onclick="document.getElementById('confirm').showModal()">Delete</button>
+```
+
+`showModal()` opens with backdrop and traps focus. `show()` opens non-modally. `<form method="dialog">` closes the dialog and returns the button's `value` — no JS needed for OK/Cancel pattern.
+
+Style the backdrop with the `::backdrop` pseudo-element:
+
+```css
+dialog::backdrop { background: rgba(0,0,0,0.5); }
+```
+
+## Popover API (Baseline 2024)
+
+For tooltips, menus, dropdowns — anything that pops over content but isn't a modal. **No JavaScript required for trigger wiring.**
+
+```html
+<button popovertarget="menu">Open menu</button>
+<div id="menu" popover>
+  <ul>
+    <li><a href="/profile">Profile</a></li>
+    <li><a href="/settings">Settings</a></li>
+  </ul>
+</div>
+```
+
+That's it. Click the button → popover opens. Click outside or press ESC → closes. The browser handles light-dismiss and ESC behavior for you.
+
+`popover="auto"` (default) closes on outside click. `popover="manual"` requires explicit close. Combine with `<dialog popover>` if you want dialog semantics + popover behavior.
+
+## Native accordion: `<details>` + `<summary>`
+
+```html
+<details>
+  <summary>What's new in HTML?</summary>
+  <p>Quite a lot, actually...</p>
+</details>
+```
+
+Open by default with `<details open>`. Style `summary::marker` to customize the disclosure triangle. No state management, no JS.
+
+## Forms: inputs you forgot exist
+
+```html
+<input type="email"    required>
+<input type="url">
+<input type="tel"      pattern="[0-9]{3}-[0-9]{4}">
+<input type="number"   min="0" max="100" step="5">
+<input type="date">
+<input type="time">
+<input type="datetime-local">
+<input type="month">
+<input type="color">
+<input type="range"    min="0" max="100">
+<input type="search">
+<input type="file"     accept="image/*" multiple>
+```
+
+Each gets the right keyboard, on-screen UI, and browser-native validation. `required`, `pattern`, `min`, `max`, `step` give you free client-side validation — style with `:invalid` / `:valid` / `:user-invalid` (the last one only flips after the user has interacted).
+
+### `<datalist>`: built-in autocomplete suggestions
+
+```html
+<input list="cities" name="city">
+<datalist id="cities">
+  <option value="San Francisco">
+  <option value="London">
+  <option value="Tokyo">
+</datalist>
+```
+
+Free typeahead UI. No JS, no library.
+
+## Responsive images
+
+### `<picture>` for art direction (different crops at different sizes)
+
+```html
+<picture>
+  <source media="(max-width: 600px)" srcset="hero-mobile.jpg">
+  <source media="(min-width: 601px)" srcset="hero-desktop.jpg">
+  <img src="hero-desktop.jpg" alt="...">
+</picture>
+```
+
+### `srcset` for resolution (browser picks the best size)
+
+```html
+<img
+  src="photo-800.jpg"
+  srcset="photo-400.jpg 400w, photo-800.jpg 800w, photo-1600.jpg 1600w"
+  sizes="(max-width: 600px) 100vw, 50vw"
+  alt="..."
+>
+```
+
+### Lazy loading (built-in)
+
+```html
+<img src="..." alt="..." loading="lazy">
+<iframe src="..." loading="lazy"></iframe>
+```
+
+Used to require Intersection Observer + a library. Now it's one attribute.
+
+### `decoding="async"` for snappier first paint
+
+```html
+<img src="..." alt="..." decoding="async">
+```
+
+Tells the browser it's OK to decode this image off the main thread.
+
+## Accessibility primitives (cheap to use, big win)
+
+```html
+<!-- Skip link for keyboard users -->
+<a href="#main" class="sr-only-focusable">Skip to content</a>
+
+<!-- Disable a chunk of UI from interaction (e.g., behind a modal) -->
+<div inert>...</div>
+
+<!-- Tell assistive tech a region updates dynamically -->
+<div aria-live="polite">3 new messages</div>
+
+<!-- Make the relationship between label and field explicit -->
+<label for="email">Email</label>
+<input id="email" type="email">
+
+<!-- Screen-reader-only text -->
+<span class="sr-only">Loading…</span>
+```
+
+`inert` (Baseline 2023) is a game-changer — set it on a chunk of DOM and the browser disables tab focus, click events, and screen reader navigation for everything inside.
+
+## Web components in 30 seconds
+
+```js
+class HotChip extends HTMLElement {
+  connectedCallback() {
+    this.innerHTML = `<span style="color:red">${this.textContent}</span>`;
+  }
+}
+customElements.define('hot-chip', HotChip);
+```
+
+```html
+<hot-chip>Spicy!</hot-chip>
+```
+
+Custom elements + Shadow DOM + HTML templates let you build framework-agnostic components. Most teams stick with React/Vue, but custom elements ship in design systems (Adobe Spectrum, Salesforce Lightning) and embeddable widgets.
+
+## What you can finally drop
+
+- jQuery for DOM lookups (`document.querySelector` since IE8 days)
+- jQuery modal plugins (`<dialog>`)
+- Tooltip libraries for simple cases (Popover API)
+- Image lazy-loading libraries (`loading="lazy"`)
+- Custom autocomplete libraries for simple cases (`<datalist>`)
+- `target="_blank"` without `rel="noopener noreferrer"` — modern browsers default to noopener but be explicit
+- Tabindex hacks for closing modals (use `<dialog>` and `inert`)
+
+## Quick reference
+
+| Goal | Old way | Modern way |
+|---|---|---|
+| Modal dialog | jQuery UI / Bootstrap modal | `<dialog>` + `showModal()` |
+| Tooltip / menu / dropdown | JS library | Popover API |
+| Accordion | JS toggle classes | `<details>` + `<summary>` |
+| Lazy-load images | Intersection Observer | `loading="lazy"` |
+| Autocomplete | jQuery autocomplete | `<datalist>` |
+| Date picker | jQuery datepicker | `<input type="date">` |
+| Color picker | jQuery colorpicker | `<input type="color">` |
+| Disable a UI region | `pointer-events:none` + tabindex hacks | `inert` attribute |
+| Page structure | nested `<div>`s | semantic landmarks |
+
+## Sources
+
+- [Popover API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Popover_API)
+- [Popover API lands in Baseline (web.dev)](https://web.dev/blog/popover-api)
+- [`<dialog>` — MDN](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/dialog)
+- [Comparing the Popover API and the `<dialog>` element (LogRocket)](https://blog.logrocket.com/comparing-popover-api-dialog-element/)
+- [15 HTML Facts for 2026 (CodeTap)](https://codetap.org/blog/15-html-facts-every-web-developer-should-know-2026)

@@ -1,0 +1,8 @@
+{
+  "slug": "mongo-query-matcher",
+  "title": "MongoDB-Style Query Matcher",
+  "tags": ["mongodb", "javascript", "predicates", "recursion"],
+  "difficulty": "medium",
+  "estimatedMinutes": 35,
+  "concepts": ["operators", "predicates", "recursion", "object-iteration"]
+}

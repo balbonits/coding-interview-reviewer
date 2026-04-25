@@ -1,0 +1,208 @@
+---
+title: "Modern CSS: What Changed Since You Last Looked"
+tags: ["css", "frontend", "fundamentals", "modern"]
+related: ["layout", "design-systems", "responsive-design"]
+---
+
+If your CSS knowledge is from before ~2018, the language has changed more in the last few years than in the previous decade. This note is the "what to update on" cheatsheet — every feature here is **production-ready** in current Chrome, Firefox, Safari, and Edge (Baseline 2024+).
+
+## Layout: forget floats, forget Bootstrap grids
+
+### Flexbox (1D layout)
+
+Use Flexbox when you're laying out things in a single direction (a row of buttons, a stack of form fields).
+
+```css
+.toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+```
+
+`gap` works in flex (since 2021) — no more margin hacks for spacing between flex children.
+
+### CSS Grid (2D layout)
+
+Use Grid when you're laying out things in both rows AND columns (page layouts, card grids, dashboards).
+
+```css
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+```
+
+`auto-fit + minmax` gives you responsive cards that wrap automatically — no media queries needed.
+
+### Subgrid (newer, 2023+)
+
+Lets a child grid inherit the parent's grid tracks. Critical for "make every card's header line up perfectly across rows":
+
+```css
+.cards { display: grid; grid-template-rows: auto 1fr auto; }
+.card  { display: grid; grid-template-rows: subgrid; grid-row: span 3; }
+```
+
+## Container queries: responsive-by-component (2023)
+
+The killer feature. Instead of styling based on viewport size, you can style a component based on **its own container's size** — finally letting you build truly reusable responsive components.
+
+```css
+.card-container {
+  container-type: inline-size;       /* declare it as a query container */
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+@container (min-width: 480px) {
+  .card { grid-template-columns: auto 1fr; }   /* horizontal layout when wide */
+}
+```
+
+Goodbye to "this component has 4 different layouts depending on what page it's on".
+
+## `:has()` — the parent selector you've been wanting since forever (2023)
+
+CSS finally has a parent selector. You can style an element based on what's inside it.
+
+```css
+/* card with an image gets different padding */
+.card:has(img) { padding: 0; }
+
+/* form with an invalid input gets a red border */
+form:has(:invalid) { border-color: red; }
+
+/* article with a video — flag it */
+article:has(video) .badge { display: inline; }
+```
+
+This kills hundreds of lines of "find the parent and toggle a class" JavaScript.
+
+## Native CSS nesting (2023)
+
+You no longer need Sass to nest selectors. Browsers parse it natively.
+
+```css
+.card {
+  padding: 1rem;
+  border-radius: 0.5rem;
+
+  & .title {
+    font-weight: 600;
+  }
+
+  &:hover {
+    background: var(--accent);
+  }
+
+  @media (max-width: 600px) {
+    padding: 0.5rem;
+  }
+}
+```
+
+Note the `&` is **required** when nesting selectors that start with letters (different from Sass). `&:hover` is fine; `:hover` alone won't nest.
+
+## `@layer` (cascade layers) — taming specificity (2022)
+
+Group rules into layers; layers later in the document win, regardless of selector specificity. The cure for "why is this style not applying??"
+
+```css
+@layer reset, base, components, utilities;
+
+@layer reset      { * { margin: 0; box-sizing: border-box; } }
+@layer base       { body { font-family: system-ui; } }
+@layer components { .button { padding: 0.5rem 1rem; } }
+@layer utilities  { .hidden { display: none; } }
+```
+
+Now `utilities .hidden` always wins over `components .button`, no `!important` needed.
+
+## OKLCH color & `color-mix()` — the modern color toolkit (2023)
+
+`oklch()` is a perceptually uniform color space — equal numeric changes look like equal perceived changes. Better for design tokens than RGB or HSL.
+
+```css
+:root {
+  --brand: oklch(60% 0.15 250);
+}
+
+.button {
+  background: var(--brand);
+  /* derive a hover color by mixing with black */
+  &:hover { background: color-mix(in oklch, var(--brand), black 10%); }
+}
+```
+
+`color-mix()` makes your design system shrink dramatically — derive shades from a single brand color instead of hand-picking 10 variants.
+
+## Logical properties — RTL/i18n by default (2022)
+
+Instead of `margin-left`, use `margin-inline-start`. Instead of `width`, use `inline-size`. The browser maps "start/end" and "inline/block" to the right physical direction based on the document's writing direction.
+
+```css
+.callout {
+  padding-inline: 1rem;          /* left + right in LTR; right + left in RTL */
+  border-inline-start: 4px solid var(--brand);
+  margin-block: 1rem;            /* top + bottom */
+}
+```
+
+Single rule works for English AND Arabic without changing CSS.
+
+## View Transitions API (2024+)
+
+Smooth page-to-page or state-to-state transitions, written in CSS, no framework needed.
+
+```js
+document.startViewTransition(() => {
+  // change the DOM here
+  list.append(newItem);
+});
+```
+
+```css
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.3s;
+}
+```
+
+For SPAs, this is the React Framer-Motion replacement for many cases. Single Page View Transitions are Baseline; Cross-document (full page nav) is shipping in 2025-2026.
+
+## What you can finally drop
+
+- `float` for layout (still used for text wrapping around images)
+- Vendor prefixes for almost everything (`-webkit-`, `-moz-` are mostly historical now)
+- IE11 hacks (Microsoft ended support in 2022)
+- Sass for nesting and variables (CSS does both natively)
+- `clearfix` hacks
+- JS-driven layout for things `:has()` and container queries can do
+
+## Quick reference — what to reach for
+
+| Goal | Old way | Modern way |
+|---|---|---|
+| Layout a row of items | floats / inline-block | `display: flex` + `gap` |
+| Responsive card grid | media queries everywhere | `grid` + `auto-fit minmax` |
+| Component responsive to its container | impossible | container queries |
+| Style parent based on child | JS class toggle | `:has()` |
+| Nested styles | Sass / Less | native CSS nesting |
+| Tame specificity wars | `!important` | `@layer` |
+| Derive color shades | hand-pick or Sass | `oklch()` + `color-mix()` |
+| Smooth state transitions | Framer Motion / GSAP | View Transitions API |
+
+## Sources
+
+- [Modern CSS 2026: Container Queries, Cascade Layers & Beyond](https://blog.weskill.org/2026/03/modern-css-2026-container-queries_01245639116.html)
+- [The State of CSS in 2026 (CODERCOPS)](https://www.codercops.com/blog/state-of-css-2026)
+- [20 Modern CSS Features You Need to Know in 2026 (Frontend Master)](https://allahabadi.dev/blogs/css/20-modern-css-features/)
+- [The Modern CSS Toolkit — Nick Paolini](https://www.nickpaolini.com/blog/modern-css-toolkit-2026)
+- [CSS Container Queries — MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment/Container_queries)
+- [`:has()` — MDN](https://developer.mozilla.org/en-US/docs/Web/CSS/:has)

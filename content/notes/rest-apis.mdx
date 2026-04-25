@@ -1,0 +1,226 @@
+---
+title: "RESTful APIs: Interview-Ready Reference"
+tags: ["rest", "http", "api", "backend", "interviews"]
+related: ["node-server-side", "microservices-microfrontend"]
+---
+
+REST is the default style for HTTP APIs. This note covers what interviewers actually ask: verbs and idempotency, status codes that come up, error shapes, pagination, versioning, caching, idempotency keys, and how REST compares to GraphQL/gRPC.
+
+## What "REST" actually means
+
+Roy Fielding's 2000 dissertation defined REST as a set of constraints, not a spec. In interview-friendly form:
+
+- **Client–server.** Separate concerns; UI doesn't touch the data store directly.
+- **Stateless.** Every request carries everything needed to process it. Auth tokens, not server session memory.
+- **Cacheable.** Responses must declare whether they're cacheable (`Cache-Control`, `ETag`).
+- **Uniform interface.** Resources have URIs; you act on them with a small set of verbs (GET, POST, PUT, PATCH, DELETE).
+- **Layered system.** Clients can't tell if they're talking to the origin or a proxy/CDN.
+- **HATEOAS** (optional). Responses include hypermedia links to next actions. Rare in practice; know the term.
+
+Most "REST" APIs in the wild are really "JSON over HTTP that mostly looks RESTful." That's fine — what matters is being intentional about the constraints you keep.
+
+## HTTP verbs and idempotency
+
+| Verb | Purpose | Safe? | Idempotent? | Has body? |
+|---|---|---|---|---|
+| `GET` | Read | ✓ | ✓ | No |
+| `HEAD` | Read headers only | ✓ | ✓ | No |
+| `OPTIONS` | Discover allowed methods / CORS preflight | ✓ | ✓ | No |
+| `POST` | Create / non-idempotent action | ✗ | ✗ | Yes |
+| `PUT` | Replace resource (full) | ✗ | ✓ | Yes |
+| `PATCH` | Partial update | ✗ | Often (depends on impl) | Yes |
+| `DELETE` | Remove resource | ✗ | ✓ | Optional |
+
+- **Safe** = no server-side state change.
+- **Idempotent** = same request N times = same effect as 1 time.
+
+Why this matters: idempotent verbs are safe to retry on network failure. `POST` isn't, which is why idempotency keys exist (see below).
+
+## Status codes that actually matter
+
+Group them by what they signal — interviewers want to hear "I'd return X because Y," not memorized lists.
+
+**2xx — Success**
+- `200 OK` — generic success, has a body.
+- `201 Created` — created a resource. Include `Location` header pointing to it.
+- `202 Accepted` — request received, not yet processed (async/queued work).
+- `204 No Content` — success with no body (typical for `DELETE` and idempotent `PUT`).
+
+**3xx — Redirection / cache**
+- `301 Moved Permanently` — resource has a new URL forever; browsers cache aggressively.
+- `302 Found` / `307 Temporary Redirect` — temporary; `307` preserves the method, `302` historically didn't.
+- `304 Not Modified` — used with `If-None-Match` / `If-Modified-Since`; tells the client its cached copy is still fresh.
+
+**4xx — Client error**
+- `400 Bad Request` — malformed syntax or invalid input shape.
+- `401 Unauthorized` — missing or invalid credentials. (Yes, the name is wrong; it really means "unauthenticated.")
+- `403 Forbidden` — authenticated but not allowed.
+- `404 Not Found` — resource doesn't exist (or you don't want to admit it does).
+- `405 Method Not Allowed` — endpoint exists but doesn't accept that verb.
+- `409 Conflict` — state conflict (e.g., creating a resource that already exists, or version mismatch).
+- `410 Gone` — resource existed but is permanently removed.
+- `422 Unprocessable Entity` — syntax is fine but semantically invalid (validation errors). Common API choice for "your JSON parsed but the values are wrong."
+- `429 Too Many Requests` — rate-limited. Include `Retry-After` header.
+
+**5xx — Server error**
+- `500 Internal Server Error` — generic blow-up. Don't leak stack traces.
+- `502 Bad Gateway` — your upstream service returned garbage.
+- `503 Service Unavailable` — temporarily down (maintenance, overload). Include `Retry-After`.
+- `504 Gateway Timeout` — your upstream took too long.
+
+**Common interview trap:** when do you return `404` vs `403`? Both can mean "you can't have this." `403` says "exists, denied." `404` says "doesn't exist (or we won't tell you)." For sensitive resources, `404` leaks less. For owned-but-restricted resources, `403` is more honest.
+
+## Resource naming
+
+- **Nouns, not verbs.** `/users`, not `/getUsers`. The verb is the HTTP method.
+- **Plural collections, singular member by ID.** `/users` (collection) and `/users/42` (member).
+- **Hierarchy reflects ownership.** `/users/42/orders` for orders that belong to user 42. Don't nest more than 2 levels deep — past that, use query params or a flat resource.
+- **Lowercase, hyphenated.** `/order-items`, not `/orderItems` or `/OrderItems`.
+- **Filter, sort, paginate via query params.** `GET /orders?status=shipped&sort=-created_at&limit=20`.
+
+## Request and response shapes
+
+JSON is the default. Some conventions worth knowing:
+
+- **Content negotiation** via `Accept` (what client wants) and `Content-Type` (what's in the body).
+- **Use `application/json`** for both unless you have a reason not to.
+- **Wrap collections** in an envelope when you need pagination metadata or links: `{ "data": [...], "next_cursor": "..." }`. For single resources, returning the bare object is fine.
+- **Don't return `null` for missing collections** — return `[]`. Null vs empty array breaks consumers needlessly.
+
+### Errors: RFC 9457 Problem Details
+
+The current standard (replaces RFC 7807) is **Problem Details for HTTP APIs**. The shape:
+
+```json
+{
+  "type": "https://example.com/probs/out-of-stock",
+  "title": "Out of stock",
+  "status": 409,
+  "detail": "SKU ABC123 has 0 units remaining.",
+  "instance": "/orders/567/items/3"
+}
+```
+
+`Content-Type: application/problem+json`. You can extend with arbitrary fields (`errors: [...]` for validation lists is common). Backward-compatible with 7807 — no rush to migrate, but use 9457 for new APIs.
+
+## Pagination
+
+Three strategies, each with a clear use case:
+
+### Offset / limit (page numbers)
+
+```
+GET /orders?offset=40&limit=20
+```
+
+- ✓ Simple. ✓ Lets users jump to "page 50."
+- ✗ Slow at scale (DB scans `OFFSET` rows). ✗ Items shift if data changes mid-pagination → duplicates or skips.
+- **Use when:** small datasets, admin UIs, anywhere users pick a page number.
+
+### Cursor (opaque token)
+
+```
+GET /orders?cursor=eyJpZCI6MTIzfQ&limit=20
+```
+
+Server returns `next_cursor` in the response. The cursor encodes "where you left off" — typically a base64-encoded primary key.
+
+- ✓ Stable under inserts. ✓ Fast (`WHERE id > X LIMIT N`). ✓ Default for feeds, infinite scroll.
+- ✗ No "page 50." ✗ Hard to go backward without storing both directions.
+- **Use when:** streams, feeds, any large or live dataset.
+
+### Keyset (a known cursor variant)
+
+Same idea, but the cursor is a real, transparent column value (`?after_id=123`). Easier to debug than opaque base64; leaks schema details.
+
+**Always include in the response:** `has_more` (or `next_cursor: null`), and ideally the parameters used. Don't make clients parse Link headers unless you really want to be RFC 5988-formal.
+
+## Versioning
+
+Three approaches; pick one and stick to it.
+
+| Strategy | Example | Pros | Cons |
+|---|---|---|---|
+| **URL** | `/v1/users` | Visible, browser-friendly, easy to route | Mixes versioning into resource URI |
+| **Header** | `Accept: application/vnd.example.v2+json` or `API-Version: 2` | Clean URLs, stays "RESTful" | Invisible in browser, harder to test by hand |
+| **Hostname** | `v1.api.example.com` | Lets you scale versions independently | More DNS / TLS to manage |
+
+Most public APIs use URL versioning (Stripe, Twilio, GitHub). Keep versions for *breaking changes only*. Deprecate via the `Deprecation` and `Sunset` HTTP headers (RFC 8594, RFC 9745) — they tell clients "this version goes away on 2027-01-01."
+
+## Caching
+
+Two flavors: **freshness** (don't even ask, the cache is fresh) and **validation** (ask, but only download if changed).
+
+**Freshness — `Cache-Control`:**
+```
+Cache-Control: public, max-age=3600, stale-while-revalidate=60
+```
+- `public` / `private` — CDNs vs browser-only.
+- `max-age=N` — fresh for N seconds.
+- `no-cache` — *must* revalidate before reuse (not "don't cache").
+- `no-store` — actually don't cache. Use for sensitive data.
+- `stale-while-revalidate=N` — serve stale for N seconds while fetching fresh in background.
+
+**Validation — `ETag` + `If-None-Match`:**
+
+1. Server returns `ETag: "abc123"` with the resource.
+2. Client retries with `If-None-Match: "abc123"`.
+3. Server returns `304 Not Modified` (no body) if unchanged, or `200` + new body if changed.
+
+**`Vary` header** tells caches "this response varies by request header X." `Vary: Accept-Encoding, Authorization` is common — without it, a CDN might serve a logged-in user's response to an anonymous one.
+
+## Idempotency keys (for POST)
+
+POSTs aren't idempotent, but network retries happen. The fix: client sends a unique key per logical operation; server stores the response once and returns the same response on retry.
+
+**Client side:**
+```http
+POST /charges HTTP/1.1
+Idempotency-Key: 5b7cdaaa-0e1d-4f7c-91d4-2e9a4f8c1234
+Content-Type: application/json
+
+{ "amount": 5000, "currency": "usd" }
+```
+
+**Server side (Stripe pattern):**
+1. Look up the key in a fast store (Redis, DynamoDB, Postgres with index).
+2. If found: return the stored status + body. Do **not** re-execute.
+3. If not: execute the request, store `{key → (status, body, request_hash)}`, return.
+4. Validate that the request body matches the original (same key + different body = 422 / "key reused with different request").
+5. Expire keys after ~24 hours.
+
+Use a UUIDv4 (or any sufficiently random string). Don't use sensitive fields as keys. Only use idempotency keys on POSTs — GET/PUT/DELETE are idempotent by definition.
+
+There's an in-progress IETF spec (`Idempotency-Key` HTTP header) that codifies this pattern.
+
+## REST vs GraphQL vs gRPC
+
+| | REST | GraphQL | gRPC |
+|---|---|---|---|
+| **Wire format** | JSON over HTTP | JSON over HTTP (one POST endpoint) | Protobuf over HTTP/2 |
+| **Schema** | Optional (OpenAPI, JSON Schema) | Required (typed) | Required (typed) |
+| **Over/under-fetching** | Common — multiple endpoints | Solved — client picks fields | Less of an issue (typed messages) |
+| **Browser support** | Native | Native | Needs grpc-web shim |
+| **Caching** | HTTP-native (ETag, Cache-Control) | Custom; harder | Custom; harder |
+| **Best for** | Public APIs, CRUD, anything cached | Complex client UIs, BFFs | Internal microservice traffic |
+
+You'll be asked when to pick each. Short version: **REST for public-facing CRUD that benefits from HTTP caching, GraphQL when one client needs many shapes of the same data, gRPC for high-throughput internal traffic.**
+
+## Common interview prompts
+
+- "Design the API for [Twitter timeline / Uber rides / Slack messages]." → think resources, verbs, pagination strategy, auth, rate limiting.
+- "What status code for [creating a thing that already exists]?" → `409 Conflict`.
+- "How do you make a `POST` safe to retry?" → idempotency key.
+- "What's the difference between `PUT` and `PATCH`?" → PUT replaces whole resource; PATCH updates fields.
+- "How would you cache a list endpoint?" → `Cache-Control: public, max-age=N` + `ETag` for revalidation; consider `Vary: Authorization`.
+- "How do you version an API?" → URL or header; pick one and stick to it; deprecate with `Sunset` header.
+- "When would you not use REST?" → high-throughput internal RPC (gRPC), variable-shape client queries (GraphQL), real-time bidirectional (WebSocket / SSE).
+
+## Further reading
+
+- [RFC 9457 — Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html)
+- [Stripe — designing robust APIs with idempotency](https://stripe.com/blog/idempotency)
+- [Stripe API reference — idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+- [Speakeasy — pagination best practices in REST API design](https://www.speakeasy.com/api-design/pagination)
+- [Speakeasy — versioning best practices in REST API design](https://www.speakeasy.com/api-design/versioning)
+- [Microsoft Azure — Web API design best practices](https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design)

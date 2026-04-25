@@ -1,0 +1,22 @@
+---
+title: "FizzBuzz"
+---
+
+Implement classic **FizzBuzz**. Return an array of strings representing the numbers from `1` to `n`, with these substitutions:
+
+- Multiples of 3 → `"Fizz"`
+- Multiples of 5 → `"Buzz"`
+- Multiples of both 3 and 5 → `"FizzBuzz"`
+- Otherwise → the number as a string (e.g. `"7"`)
+
+## Examples
+
+```js
+fizzbuzz(5)   // → ["1", "2", "Fizz", "4", "Buzz"]
+fizzbuzz(0)   // → []
+fizzbuzz(15)  // → [..., "13", "14", "FizzBuzz"]
+```
+
+## Hint
+
+The cleanest version doesn't need three separate `if/else if` branches. Try building the output string by checking divisibility independently for `3` and `5`, then falling back to the number if the string is empty.

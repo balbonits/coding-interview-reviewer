@@ -1,0 +1,45 @@
+---
+title: "Sliding-Window Rate Limiter"
+---
+
+Implement a `RateLimiter` class that enforces "no more than `maxRequests` per `windowMs` per client" using the **sliding window log** algorithm.
+
+## API
+
+```js
+const limiter = new RateLimiter({ maxRequests: 5, windowMs: 1000, now: () => Date.now() });
+
+limiter.allow("client-A");   // true / false
+limiter.remaining("client-A");  // number of requests left in the current window
+```
+
+- `allow(clientId)` — record an attempt and return `true` if it's allowed (within budget), `false` if rate-limited (over budget).
+- `remaining(clientId)` — how many more requests this client could make right now without being rate-limited.
+- `now` is an injected clock (defaults to `Date.now`). The tests inject a mock clock — your implementation **must** use `this.now()` rather than calling `Date.now()` directly.
+
+## How the algorithm works
+
+For each client, keep a list of recent request timestamps. On every call:
+
+1. **Drop expired** timestamps (older than `now() - windowMs`).
+2. If the remaining list has **fewer than `maxRequests`** entries, append `now()` and return `true`.
+3. Otherwise, return `false` *without* recording the attempt.
+
+This is the "sliding window log" approach — exact, but `O(n)` on memory per client (n = requests in the window). It's the right answer for an interview because it's the only one with no edge-case quirks.
+
+## Edge cases to handle
+
+- A new client (no entries yet) should be allowed up to `maxRequests` immediately.
+- After the window passes, an exhausted client should be allowed again.
+- `remaining(clientId)` for an unknown client equals `maxRequests`.
+- Calls *outside* `allow` (i.e., `remaining`) should still drop expired timestamps before counting.
+
+## Why this matters in interviews
+
+- **Time-based reasoning** under a mockable clock — a recurring pattern in any system involving caching, sessions, retries, or backoff.
+- **Per-key state** in a `Map` — exactly what a real rate limiter (Redis-backed in prod) tracks.
+- **Algorithm trade-offs** — interviewer follow-ups: "How would you reduce memory?" → fixed-window counter, sliding-window counter, token bucket. (Not required here, but be ready to discuss.)
+
+## Hint
+
+Use a `Map<string, number[]>` for client-id → array of timestamps. Both `allow` and `remaining` start with the same prune step — factor it into a small helper.

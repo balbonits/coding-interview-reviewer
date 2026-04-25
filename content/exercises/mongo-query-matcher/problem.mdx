@@ -1,0 +1,71 @@
+---
+title: "MongoDB-Style Query Matcher"
+---
+
+Implement `match(query, doc)` — return `true` if `doc` satisfies a MongoDB-style query, `false` otherwise. This is the predicate engine that sits at the heart of any Mongo-like find/filter implementation, and it's a great test of your operator-driven thinking.
+
+## What you must support
+
+**Implicit equality** on top-level fields. Multiple fields are AND-ed together:
+
+```js
+match({ name: "Alice" },             { name: "Alice", age: 30 })  // true
+match({ name: "Alice", age: 30 },    { name: "Alice", age: 30 })  // true
+match({ name: "Alice", age: 31 },    { name: "Alice", age: 30 })  // false
+```
+
+**Comparison operators** (object-valued conditions). Multiple ops on one field are AND-ed:
+
+```js
+match({ age: { $gt: 18 } },                     { age: 30 })  // true
+match({ age: { $gte: 18, $lt: 65 } },           { age: 18 })  // true
+match({ status: { $in: ["active", "pending"] } }, { status: "active" })  // true
+match({ deletedAt: { $exists: false } },        { name: "A" })  // true
+```
+
+Supported operators:
+
+- `$eq`, `$ne`
+- `$gt`, `$gte`, `$lt`, `$lte`
+- `$in` (array contains value), `$nin` (does not)
+- `$exists` (field is present, regardless of value)
+
+**Logical operators** at the top level:
+
+```js
+match(
+  { $or: [{ role: "admin" }, { role: "owner" }] },
+  { role: "admin" }
+);  // true
+
+match(
+  { active: true, $or: [{ role: "admin" }, { role: "owner" }] },
+  { active: true, role: "user" }
+);  // false (role doesn't satisfy $or)
+```
+
+`$and` and `$or` each take an array of sub-queries. `$or` is satisfied if any sub-query matches. `$and` if all do (you can mostly skip `$and` since top-level fields already AND together — but support it anyway).
+
+## Out of scope
+
+- Nested document matching (e.g., `{ "profile.name": "Alice" }` or `{ profile: { name: "Alice" } }`). Top-level fields only.
+- `$regex`, `$elemMatch`, `$all`, `$size`, `$not`, `$nor` — supported operators are listed above.
+- Unknown operators — feel free to throw.
+
+## Why this matters in interviews
+
+This is a great mid-difficulty problem because it exercises:
+
+- **Operator-driven design** — branching on a small lookup table beats a chain of `if`s.
+- **Recursive logical handling** — `$and` / `$or` recurse on `match` itself.
+- **Precise semantics** — what does `$exists: false` mean when the field is `null` vs. `undefined`? (Answer: in Mongo, `null` *is* a present value; only `undefined` means missing.)
+- **Clean separation** — top-level keys (logical operators or fields) vs. operator-object conditions on a single field.
+
+## Hint
+
+Two helper functions help a lot:
+
+1. `isOperatorObject(value)` — true if `value` is a plain object whose keys all start with `$` (e.g., `{ $gt: 18 }`).
+2. `matchField(condition, fieldValue)` — returns true if `fieldValue` satisfies a single field's condition (either implicit equality or a `{ $op: x, ... }` object).
+
+The top-level `match` then just iterates over the query keys: handle `$and`/`$or` specially, and delegate everything else to `matchField(query[key], doc[key])`.
