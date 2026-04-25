@@ -1,0 +1,9 @@
+{
+  "slug": "tree-traversal",
+  "title": "Binary Tree Traversal",
+  "tags": ["dsa", "trees", "recursion", "typescript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 30,
+  "concepts": ["binary-tree", "DFS", "BFS", "recursion", "queues"],
+  "template": "vanilla-ts"
+}

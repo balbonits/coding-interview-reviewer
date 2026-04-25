@@ -78,8 +78,9 @@ Mapping lives in `lib/exercises.ts` (`TEMPLATE_EXT`) and `components/ExerciseSan
 
 1. **Subject coverage expansion** — user wants exercises + notes spanning: DSA, React, TypeScript, RESTful APIs, microservices/microfrontend, JS/ECMAScript core, Node.js/server-side, MongoDB, UX/UI design, SEO, modern HTML, modern CSS.
    - **Day 1 seeded** (3 exercises, 6 notes): two-sum, fizzbuzz, debounce; closures, React 19 hooks, TS modern, modern CSS/HTML/JS.
-   - **Day 2 seeded so far** (3 exercises, 6 notes): resilient-fetch (REST), mongo-query-matcher (Mongo), rate-limiter (Node); rest-apis, mongodb, node-server-side, seo, ux-ui, microservices-microfrontend.
-   - **Still gaps**: React (component / hooks exercise), TypeScript (type-puzzle exercise — needs `vanilla-ts` template), more DSA depth (linked list, tree, LRU). Sandpack template support is in place; just need authoring time.
+   - **Day 2 seeded** (3 exercises, 6 notes): resilient-fetch (REST), mongo-query-matcher (Mongo), rate-limiter (Node); rest-apis, mongodb, node-server-side, seo, ux-ui, microservices-microfrontend.
+   - **Day 3 seeded** (5 exercises, 0 new notes): use-toggle (React), type-safe-pick (TS), linked-list / tree-traversal / lru-cache (DSA, vanilla-ts).
+   - **Remaining content gaps**: a11y refactor exercise for UX/UI; SEO exercise (conceptual gap, no obvious code-form); architecture exercise for microservices/MFE.
 2. ~~**Sandpack template support**~~ ✓ Done — `template` field in `meta.json` supports `vanilla`, `vanilla-ts`, `react`, `react-ts`, `node`. See "Exercises" section above for file conventions per template.
 3. **Manual dark mode toggle** — currently using shadcn's class-based dark variant but no toggle; will need a client component + localStorage persistence
 4. **Deploy to Vercel** — env vars (Ollama won't be reachable from Vercel — Day 2 needs cloud LLM strategy: probably free Gemini tier or Anthropic API once user is employed)

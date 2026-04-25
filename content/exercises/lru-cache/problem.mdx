@@ -1,0 +1,38 @@
+---
+title: "LRU Cache"
+---
+
+Build an **LRU (Least-Recently-Used) cache** with a fixed capacity. Both `get` and `put` must run in **O(1)** amortized.
+
+## API
+
+```ts
+class LRUCache<K, V> {
+  constructor(capacity: number);
+  get(key: K): V | undefined;
+  put(key: K, value: V): void;
+  get size(): number;
+}
+```
+
+## Behavior
+
+- `get(key)` returns the value (and marks the key as most-recently-used), or `undefined` if absent.
+- `put(key, value)` inserts or updates a key. If the cache is at capacity *and* the key is new, evict the **least-recently-used** entry first.
+- Updating an existing key with `put` also marks it as most-recently-used.
+- `capacity` is fixed at construction time.
+
+## Edge cases
+
+- `capacity ≤ 0` → nothing is ever stored. Every `get` returns `undefined`. Every `put` is a no-op.
+- Re-inserting an existing key must **not** evict another entry — the size doesn't grow.
+
+## Hints
+
+- Native `Map` preserves **insertion order**. You can lean on that to track recency: every time a key is accessed, `delete` and re-`set` it. The first key in the iterator is then the LRU.
+- `Map.prototype.keys().next().value` gives you the LRU key in O(1) without iterating.
+- The classic textbook solution uses a doubly linked list + hashmap to get true O(1). The Map-based approach is a JavaScript-idiomatic shortcut that achieves the same Big-O thanks to V8's implementation of insertion-ordered keys.
+
+## Why this matters in interviews
+
+LRU is one of the most-asked LeetCode questions (LC 146) — and the trick is exactly this: most candidates default to scanning timestamps. The interview-grade answer uses the right data structure (linked-hashmap or insertion-ordered Map) so that *both* operations stay constant time.

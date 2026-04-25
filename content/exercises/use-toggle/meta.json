@@ -1,0 +1,9 @@
+{
+  "slug": "use-toggle",
+  "title": "useToggle Hook",
+  "tags": ["react", "hooks", "javascript"],
+  "difficulty": "easy",
+  "estimatedMinutes": 20,
+  "concepts": ["custom-hooks", "useState", "useCallback", "functional-updates"],
+  "template": "react"
+}

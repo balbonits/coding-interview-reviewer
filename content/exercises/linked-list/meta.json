@@ -1,0 +1,9 @@
+{
+  "slug": "linked-list",
+  "title": "Doubly Linked List",
+  "tags": ["dsa", "data-structures", "typescript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 35,
+  "concepts": ["linked-list", "pointers", "in-place-reversal"],
+  "template": "vanilla-ts"
+}

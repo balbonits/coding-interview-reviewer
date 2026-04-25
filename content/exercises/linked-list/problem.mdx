@@ -1,0 +1,36 @@
+---
+title: "Doubly Linked List"
+---
+
+Implement a generic doubly linked list. All listed operations must be **O(1)** except `toArray` (O(n)) and `reverse` (O(n)).
+
+## API
+
+```ts
+class LinkedList<T> {
+  push(value: T): void;        // append to tail
+  pop(): T | undefined;        // remove tail, return value
+  unshift(value: T): void;     // prepend to head
+  shift(): T | undefined;      // remove head, return value
+  reverse(): void;             // reverse in place
+  toArray(): T[];              // values head -> tail
+  get size(): number;
+}
+```
+
+## Requirements
+
+- `pop()` and `shift()` on an empty list return `undefined` — do not throw.
+- After `reverse()`, iterating head -> tail visits values in reversed order. Both `head`/`tail` pointers and every node's `prev`/`next` must be flipped.
+- `size` must stay accurate across all mutations.
+- Use linked nodes with `prev` / `next` pointers — don't back the list with an array.
+
+## Why doubly?
+
+A *singly* linked list gives you O(1) head ops but O(n) tail-pop (you'd have to walk to the second-to-last node). Maintaining a `prev` pointer makes every end-op constant time, at the cost of a little more bookkeeping in `push` / `pop` / `shift` / `unshift`.
+
+## Hints
+
+- Keep both `head` and `tail` pointers as fields. Update both on every mutation that touches the ends.
+- For `reverse()`: walk through the list once and swap each node's `prev` and `next`. Then swap `head` and `tail`.
+- The empty-list and single-node cases are where bugs hide. Test them explicitly.

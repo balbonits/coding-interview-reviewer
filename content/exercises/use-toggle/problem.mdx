@@ -1,0 +1,34 @@
+---
+title: "useToggle Hook"
+---
+
+Build a custom React hook called `useToggle` that manages a boolean value.
+
+## API
+
+```ts
+function useToggle(
+  initial?: boolean,
+): [
+  boolean,
+  () => void,
+  (next: boolean | ((prev: boolean) => boolean)) => void,
+];
+```
+
+The hook returns a 3-tuple:
+
+1. The current boolean **value**.
+2. A **toggle** function that flips the current value.
+3. A **setValue** function that accepts either a boolean *or* an updater function.
+
+## Requirements
+
+- Default `initial` to `false` if not provided.
+- `toggle()` must always flip the *current* value (use a functional update — don't close over a stale `value`).
+- `setValue(next)` accepts either a boolean directly **or** a `(prev) => next` updater (matching React's own `setState` shape).
+- The returned `toggle` and `setValue` references should be stable across renders (`useCallback`).
+
+## Bonus
+
+The default export `<Toggle />` is a tiny visual demo so the preview pane shows something. It's not under test — feel free to leave it as-is or restyle it.

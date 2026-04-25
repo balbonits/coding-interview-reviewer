@@ -1,0 +1,35 @@
+---
+title: "Type-Safe pick()"
+---
+
+Lodash's `pick(obj, keys)` returns a new object containing only the requested keys. Build a TypeScript-strict version that:
+
+1. Accepts an object `obj` and an array `keys`.
+2. Returns a new object containing only those keys from `obj`.
+3. **Statically rejects** keys that don't exist on `obj` — at compile time.
+4. Has the precise return type `Pick<T, K>` (no `any`, no widening).
+
+## Signature
+
+```ts
+function pick<T extends object, K extends keyof T>(
+  obj: T,
+  keys: K[],
+): Pick<T, K>;
+```
+
+## Requirements
+
+- Don't mutate `obj`.
+- Always copy each requested key — even if its runtime value is `undefined`. (Simpler rule, matches lodash.)
+- Returned key order should match the order of the `keys` array.
+
+## Hints
+
+- `K extends keyof T` constrains `K` to keys that *actually exist* on `T`. That's what gives you the static rejection.
+- `Pick<T, K>` is the built-in utility type — use it for the return type.
+- A simple `for...of` loop is enough — no need for `reduce` or spread.
+
+## Why this matters in interviews
+
+`pick` looks trivial as JavaScript but is a common probe for whether you can write **generic, constrained TypeScript** that catches misuse at compile time. The key insight is `K extends keyof T` — without it, callers can pass any string and you've thrown away type safety.

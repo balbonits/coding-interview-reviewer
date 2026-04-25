@@ -1,0 +1,9 @@
+{
+  "slug": "lru-cache",
+  "title": "LRU Cache",
+  "tags": ["dsa", "data-structures", "caching", "typescript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 35,
+  "concepts": ["LRU", "Map-insertion-order", "O(1)-eviction", "caching"],
+  "template": "vanilla-ts"
+}

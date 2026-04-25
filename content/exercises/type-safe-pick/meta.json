@@ -1,0 +1,9 @@
+{
+  "slug": "type-safe-pick",
+  "title": "Type-Safe pick()",
+  "tags": ["typescript", "generics", "javascript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 25,
+  "concepts": ["generics", "keyof", "Pick", "type-narrowing"],
+  "template": "vanilla-ts"
+}

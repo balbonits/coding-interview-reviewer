@@ -1,0 +1,41 @@
+---
+title: "Binary Tree Traversal"
+---
+
+Implement `traverse(root, order)` for a binary tree. Given a root node and an order, return an array of values in that order.
+
+## Tree shape
+
+```ts
+type TreeNode<T> = {
+  value: T;
+  left: TreeNode<T> | null;
+  right: TreeNode<T> | null;
+};
+```
+
+## API
+
+```ts
+type TraversalOrder = 'preorder' | 'inorder' | 'postorder' | 'levelorder';
+
+function traverse<T>(root: TreeNode<T> | null, order: TraversalOrder): T[];
+```
+
+## Orders
+
+- **`preorder`** (DFS): root → left → right
+- **`inorder`** (DFS): left → root → right
+- **`postorder`** (DFS): left → right → root
+- **`levelorder`** (BFS): top-to-bottom, left-to-right
+
+## Edge cases
+
+- `traverse(null, ...)` returns `[]`.
+- A node may have only one child (or no children).
+- A skewed tree (only left or only right children) must still work.
+
+## Hints
+
+- The three DFS orders share most of the code — only the placement of `out.push(n.value)` differs. Write one helper that branches on `order`.
+- For BFS, use a queue (a JS array with `shift` is fine for the exercise; in production you'd want a proper deque to avoid O(n) shift cost).
