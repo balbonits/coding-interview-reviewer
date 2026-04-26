@@ -27,6 +27,7 @@ const navLinks = [
   { href: "/exercises", label: "Exercises" },
   { href: "/review", label: "Review" },
   { href: "/interview", label: "Interview" },
+  { href: "/capture", label: "Capture" },
 ];
 
 export default function RootLayout({
