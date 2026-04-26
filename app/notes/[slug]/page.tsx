@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrism from "rehype-prism-plus";
+import remarkGfm from "remark-gfm";
 import { getNote, listNoteSlugs } from "@/lib/notes";
 import { mdxComponents } from "@/components/MdxComponents";
+import { SetPageContext } from "@/components/SetPageContext";
 import { Badge } from "@/components/ui/badge";
 
 export async function generateStaticParams() {
@@ -55,11 +57,16 @@ export default async function NotePage({
       </header>
 
       <section>
+        <SetPageContext
+          title={`Note: ${note.title}`}
+          description={`Topics: ${note.tags.join(", ")}`}
+        />
         <MDXRemote
           source={note.content}
           components={mdxComponents}
           options={{
             mdxOptions: {
+              remarkPlugins: [remarkGfm],
               rehypePlugins: [[rehypePrism, { ignoreMissing: true }]],
             },
           }}

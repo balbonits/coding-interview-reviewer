@@ -51,4 +51,28 @@ export const mdxComponents: MDXComponents = {
     />
   ),
   hr: (props) => <hr className="my-8 border-border" {...props} />,
+  table: (props) => (
+    <div className="my-6 overflow-x-auto">
+      <table
+        className="w-full border-collapse text-sm"
+        {...props}
+      />
+    </div>
+  ),
+  thead: (props) => (
+    <thead className="border-b border-border bg-muted/50" {...props} />
+  ),
+  tbody: (props) => (
+    <tbody className="divide-y divide-border" {...props} />
+  ),
+  tr: (props) => <tr className="hover:bg-muted/30 transition-colors" {...props} />,
+  th: (props) => (
+    <th
+      className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      {...props}
+    />
+  ),
+  td: (props) => (
+    <td className="px-4 py-2.5 text-foreground/90 align-top" {...props} />
+  ),
 };

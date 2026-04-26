@@ -2,12 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrism from "rehype-prism-plus";
+import remarkGfm from "remark-gfm";
 import {
   getExercise,
   listExerciseSlugs,
 } from "@/lib/exercises";
 import { ExerciseSandbox } from "@/components/ExerciseSandbox";
 import { mdxComponents } from "@/components/MdxComponents";
+import { SetPageContext } from "@/components/SetPageContext";
 import { Badge } from "@/components/ui/badge";
 
 const difficultyColor: Record<string, string> = {
@@ -77,11 +79,16 @@ export default async function ExercisePage({
       </header>
 
       <section>
+        <SetPageContext
+          title={`Exercise: ${exercise.meta.title}`}
+          description={`${exercise.meta.difficulty} difficulty · Topics: ${exercise.meta.tags.join(", ")}`}
+        />
         <MDXRemote
           source={exercise.problemContent}
           components={mdxComponents}
           options={{
             mdxOptions: {
+              remarkPlugins: [remarkGfm],
               rehypePlugins: [[rehypePrism, { ignoreMissing: true }]],
             },
           }}

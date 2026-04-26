@@ -4,6 +4,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "prismjs/themes/prism-tomorrow.css";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { FloatingChat } from "@/components/FloatingChat";
+import { PageContextProvider } from "@/lib/pageContext";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -50,6 +52,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <PageContextProvider>
         <header className="border-b border-border">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
             <Link
@@ -78,6 +81,8 @@ export default function RootLayout({
         <footer className="border-t border-border py-6 text-center text-xs text-muted-foreground">
           Local-only build · powered by Ollama · {new Date().getFullYear()}
         </footer>
+        <FloatingChat />
+        </PageContextProvider>
       </body>
     </html>
   );
