@@ -8,6 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import Markdown from "react-markdown";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -258,13 +259,40 @@ function Message({ message }: { message: InterviewMessage }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 whitespace-pre-wrap ${
+        className={`max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 ${
           isUser
-            ? "bg-primary text-primary-foreground"
+            ? "bg-primary text-primary-foreground whitespace-pre-wrap"
             : "bg-muted text-foreground"
         }`}
       >
-        {message.content || "…"}
+        {isUser ? (message.content || "…") : (
+          <Markdown
+            components={{
+              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              em: ({ children }) => <em className="italic">{children}</em>,
+              ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+              li: ({ children }) => <li>{children}</li>,
+              h1: ({ children }) => <h1 className="font-semibold text-base mb-1">{children}</h1>,
+              h2: ({ children }) => <h2 className="font-semibold mb-1">{children}</h2>,
+              h3: ({ children }) => <h3 className="font-medium mb-1">{children}</h3>,
+              blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-3 italic opacity-80 my-2">{children}</blockquote>,
+              code: ({ className, children, ...props }) => {
+                const isBlock = className?.startsWith("language-");
+                return isBlock ? (
+                  <pre className="bg-background/60 rounded p-3 overflow-x-auto text-xs my-2 font-mono">
+                    <code {...props}>{children}</code>
+                  </pre>
+                ) : (
+                  <code className="bg-background/60 rounded px-1 py-0.5 text-xs font-mono" {...props}>{children}</code>
+                );
+              },
+            }}
+          >
+            {message.content || "…"}
+          </Markdown>
+        )}
       </div>
     </div>
   );
