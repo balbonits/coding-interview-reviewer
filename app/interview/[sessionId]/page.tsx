@@ -38,27 +38,21 @@ export default function InterviewSessionPage({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
 
-  // Load session, redirect if missing, auto-kick the first question.
   useEffect(() => {
-    const s = getSession(sessionId);
-    if (!s) {
-      router.replace("/interview");
-      return;
-    }
-    setSession(s);
-
-    if (
-      !kickedOffRef.current &&
-      s.messages.length === 0 &&
-      !s.endedAt
-    ) {
-      kickedOffRef.current = true;
-      void send([{ role: "user", content: KICKOFF_PROMPT }], s);
-    }
+    getSession(sessionId).then((s) => {
+      if (!s) {
+        router.replace("/interview");
+        return;
+      }
+      setSession(s);
+      if (!kickedOffRef.current && s.messages.length === 0 && !s.endedAt) {
+        kickedOffRef.current = true;
+        void send([{ role: "user", content: KICKOFF_PROMPT }], s);
+      }
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Auto-scroll on transcript updates.
   useEffect(() => {
     transcriptRef.current?.scrollTo({
       top: transcriptRef.current.scrollHeight,
@@ -78,16 +72,13 @@ export default function InterviewSessionPage({
       ...newMessages,
     ];
 
-    // Optimistic update: user msg + empty assistant placeholder
     const optimistic: InterviewSession = {
       ...baseSession,
-      messages: [
-        ...messagesAfterUser,
-        { role: "assistant", content: "" },
-      ],
+      messages: [...messagesAfterUser, { role: "assistant", content: "" }],
     };
     setSession(optimistic);
-    updateSession(baseSession.id, { messages: optimistic.messages });
+    // fire-and-forget optimistic save
+    void updateSession(baseSession.id, { messages: optimistic.messages });
 
     try {
       const res = await fetch("/api/ai/interview", {
@@ -112,7 +103,6 @@ export default function InterviewSessionPage({
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed) continue;
@@ -145,20 +135,17 @@ export default function InterviewSessionPage({
         ...messagesAfterUser,
         { role: "assistant", content: assistantContent },
       ];
-      updateSession(baseSession.id, { messages: finalMessages });
+      await updateSession(baseSession.id, { messages: finalMessages });
       setSession((prev) =>
         prev ? { ...prev, messages: finalMessages } : prev,
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       setError(msg);
-      // Roll back the empty assistant placeholder so the user can retry.
       setSession((prev) =>
-        prev
-          ? { ...prev, messages: messagesAfterUser }
-          : prev,
+        prev ? { ...prev, messages: messagesAfterUser } : prev,
       );
-      updateSession(baseSession.id, { messages: messagesAfterUser });
+      void updateSession(baseSession.id, { messages: messagesAfterUser });
     } finally {
       setIsStreaming(false);
     }
@@ -167,10 +154,7 @@ export default function InterviewSessionPage({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim() || isStreaming || !session) return;
-    const userMessage: InterviewMessage = {
-      role: "user",
-      content: input.trim(),
-    };
+    const userMessage: InterviewMessage = { role: "user", content: input.trim() };
     setInput("");
     void send([userMessage], session);
   }
@@ -182,9 +166,9 @@ export default function InterviewSessionPage({
     }
   }
 
-  function handleEnd() {
+  async function handleEnd() {
     if (!session || isStreaming) return;
-    endSession(session.id);
+    await endSession(session.id);
     setSession({ ...session, endedAt: Date.now() });
   }
 
@@ -212,7 +196,7 @@ export default function InterviewSessionPage({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleEnd}
+              onClick={() => { void handleEnd(); }}
               disabled={isStreaming}
             >
               End session
@@ -258,13 +242,8 @@ export default function InterviewSessionPage({
             disabled={isStreaming}
           />
           <div className="flex items-center justify-between">
-            <p className="text-xs text-muted-foreground">
-              ⌘/Ctrl + Enter to send
-            </p>
-            <Button
-              type="submit"
-              disabled={!input.trim() || isStreaming}
-            >
+            <p className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</p>
+            <Button type="submit" disabled={!input.trim() || isStreaming}>
               {isStreaming ? "Streaming…" : "Send"}
             </Button>
           </div>

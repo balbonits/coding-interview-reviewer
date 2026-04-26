@@ -15,13 +15,13 @@ Personal front-end interview prep workspace for John (the user). Built day 1 as 
 - **MDX** via `next-mdx-remote/rsc` + `gray-matter` + `rehype-prism-plus` (Prism Tomorrow theme)
 - **Sandpack** (`@codesandbox/sandpack-react`) for in-browser code exercises
 - **Ollama** at `localhost:11434` for AI (model: `qwen2.5:14b`); lightweight `fetch` wrapper in `lib/ollama.ts`
-- **localStorage** for state (interview transcripts, exercise progress) — Day 2 will swap to Firestore
+- **MongoDB** at `localhost:27017` (db: `coding-interview-reviewer`); connection singleton in `lib/mongodb.ts` — replaces localStorage for all persistent state
 
 ## Three core features
 
 1. **`/exercises`** — Sandpack-powered in-browser coding exercises with auto-graded tests + reveal solution
 2. **`/notes`** — MDX-driven note library with tag filtering at `/tags/[tag]` (notes + exercises share a tag taxonomy)
-3. **`/interview`** — Streaming chat with local LLM that role-plays a JS interviewer; transcripts in localStorage
+3. **`/interview`** — Streaming chat with local LLM that role-plays a JS interviewer; transcripts in MongoDB (`interview_sessions` collection)
 
 ## Content authoring conventions
 
@@ -80,15 +80,16 @@ Mapping lives in `lib/exercises.ts` (`TEMPLATE_EXT`) and `components/ExerciseSan
    - **Day 1 seeded** (3 exercises, 6 notes): two-sum, fizzbuzz, debounce; closures, React 19 hooks, TS modern, modern CSS/HTML/JS.
    - **Day 2 seeded** (3 exercises, 6 notes): resilient-fetch (REST), mongo-query-matcher (Mongo), rate-limiter (Node); rest-apis, mongodb, node-server-side, seo, ux-ui, microservices-microfrontend.
    - **Day 3 seeded** (5 exercises, 0 new notes): use-toggle (React), type-safe-pick (TS), linked-list / tree-traversal / lru-cache (DSA, vanilla-ts).
-   - **Remaining content gaps**: a11y refactor exercise for UX/UI; SEO exercise (conceptual gap, no obvious code-form); architecture exercise for microservices/MFE.
-2. ~~**Sandpack template support**~~ ✓ Done — `template` field in `meta.json` supports `vanilla`, `vanilla-ts`, `react`, `react-ts`, `node`. See "Exercises" section above for file conventions per template.
-3. **Manual dark mode toggle** — currently using shadcn's class-based dark variant but no toggle; will need a client component + localStorage persistence
-4. **Deploy to Vercel** — env vars (Ollama won't be reachable from Vercel — Day 2 needs cloud LLM strategy: probably free Gemini tier or Anthropic API once user is employed)
-5. **Firebase Auth + Firestore** — Google + GitHub SSO, allowlist UID, swap localStorage → Firestore
-6. **AI side-features using existing deepseek-coder-v2 model** — chatbot, "Explain this" on code blocks, "Hint" + "Review my code" on exercises, "Grade my solution"
-7. **Spaced repetition** — daily review queue with SM-2 lite scheduler over notes & exercises
-8. **News feed** — RSS in, locally-summarized, tag-threaded
-9. **Quick capture form** — mobile-friendly authoring (writes to Firestore, "promote to repo" action)
+   - **Day 4 seeded** (4 exercises): a11y-refactor (react), seo-meta-tags (vanilla-ts), mfe-registry (vanilla-ts), plus all prior Day 3 exercises.
+   - **Remaining content gaps**: none currently — all subject areas have at least one exercise.
+2. ~~**Sandpack template support**~~ ✓ Done
+3. ~~**Manual dark mode toggle**~~ ✓ Done — ThemeToggle client component, beforeInteractive script for FOUC prevention
+4. **Deploy to Vercel** — app is Vercel-ready (generateStaticParams on all dynamic routes, nodejs runtime on API routes); blocked on Ollama not being available in cloud. Cloud LLM strategy TBD (free Gemini or Anthropic API).
+5. ~~**Firebase Auth + Firestore**~~ → **Replaced by local MongoDB** ✓ Done — `mongodb` driver, `lib/mongodb.ts` singleton, API routes for sessions/review-items/captures. App is local-only per user preference.
+6. ~~**AI side-features**~~ ✓ Done — `/api/ai/exercise` handles hint/review/explain; ExerciseSandbox has AiPanel using useSandpack for live code.
+7. ~~**Spaced repetition**~~ ✓ Done — SM-2 in `lib/spaced-repetition.ts`, ReviewQueue component, `/review` page, persisted to MongoDB.
+8. ~~**News feed**~~ ✓ Done — `/news` page, `/api/news` RSS aggregator (JS Weekly, CSS Weekly, Smashing, Dev.to), per-item Ollama summarization, 1-hour cache.
+9. ~~**Quick capture form**~~ ✓ Done — `/capture` page, CaptureForm component, MDX download, persisted to MongoDB.
 
 ## Important context about the user
 

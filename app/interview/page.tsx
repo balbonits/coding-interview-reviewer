@@ -21,11 +21,11 @@ export default function InterviewLandingPage() {
   const [sessions, setSessions] = useState<InterviewSession[] | null>(null);
 
   useEffect(() => {
-    setSessions(listSessions());
+    listSessions().then(setSessions).catch(() => setSessions([]));
   }, []);
 
-  function startNew() {
-    const s = createSession("javascript");
+  async function startNew() {
+    const s = await createSession("javascript");
     router.push(`/interview/${s.id}`);
   }
 
@@ -36,12 +36,12 @@ export default function InterviewLandingPage() {
         <p className="text-muted-foreground max-w-2xl">
           Practice a JavaScript interview against a local AI. The interviewer
           asks one question at a time and follows up on weak answers.
-          Transcripts save in your browser; nothing leaves your machine.
+          Transcripts are saved to your local MongoDB database.
         </p>
       </header>
 
       <div className="space-y-2">
-        <Button onClick={startNew} size="lg">
+        <Button onClick={() => { void startNew(); }} size="lg">
           Start new JavaScript interview
         </Button>
         <p className="text-xs text-muted-foreground">
@@ -58,11 +58,7 @@ export default function InterviewLandingPage() {
           <h2 className="text-xl font-semibold">Past sessions</h2>
           <div className="grid gap-3">
             {sessions.map((s) => (
-              <Link
-                key={s.id}
-                href={`/interview/${s.id}`}
-                className="group"
-              >
+              <Link key={s.id} href={`/interview/${s.id}`} className="group">
                 <Card className="transition-colors group-hover:border-foreground/40">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-3">

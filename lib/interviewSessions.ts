@@ -1,5 +1,3 @@
-"use client";
-
 export type InterviewRole = "system" | "user" | "assistant";
 
 export type InterviewMessage = {
@@ -17,65 +15,46 @@ export type InterviewSession = {
   messages: InterviewMessage[];
 };
 
-const STORAGE_KEY = "cir.interviewSessions";
-
-function readAll(): InterviewSession[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as InterviewSession[]) : [];
-  } catch {
-    return [];
-  }
+export async function listSessions(): Promise<InterviewSession[]> {
+  const res = await fetch("/api/sessions");
+  if (!res.ok) return [];
+  return res.json() as Promise<InterviewSession[]>;
 }
 
-function writeAll(sessions: InterviewSession[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+export async function getSession(id: string): Promise<InterviewSession | null> {
+  const res = await fetch(`/api/sessions/${id}`);
+  if (!res.ok) return null;
+  return res.json() as Promise<InterviewSession>;
 }
 
-export function listSessions(): InterviewSession[] {
-  return readAll().sort((a, b) => b.startedAt - a.startedAt);
+export async function createSession(
+  track: InterviewTrack,
+): Promise<InterviewSession> {
+  const res = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ track }),
+  });
+  return res.json() as Promise<InterviewSession>;
 }
 
-export function getSession(id: string): InterviewSession | null {
-  return readAll().find((s) => s.id === id) ?? null;
-}
-
-export function createSession(track: InterviewTrack): InterviewSession {
-  const session: InterviewSession = {
-    id:
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : String(Date.now()),
-    track,
-    startedAt: Date.now(),
-    endedAt: null,
-    messages: [],
-  };
-  writeAll([session, ...readAll()]);
-  return session;
-}
-
-export function updateSession(
+export async function updateSession(
   id: string,
   patch: Partial<Omit<InterviewSession, "id">>,
-): InterviewSession | null {
-  const all = readAll();
-  const i = all.findIndex((s) => s.id === id);
-  if (i === -1) return null;
-  const updated: InterviewSession = { ...all[i], ...patch };
-  all[i] = updated;
-  writeAll(all);
-  return updated;
+): Promise<InterviewSession | null> {
+  const res = await fetch(`/api/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) return null;
+  return res.json() as Promise<InterviewSession>;
 }
 
-export function endSession(id: string): InterviewSession | null {
+export async function endSession(id: string): Promise<InterviewSession | null> {
   return updateSession(id, { endedAt: Date.now() });
 }
 
-export function deleteSession(id: string): void {
-  writeAll(readAll().filter((s) => s.id !== id));
+export async function deleteSession(id: string): Promise<void> {
+  await fetch(`/api/sessions/${id}`, { method: "DELETE" });
 }

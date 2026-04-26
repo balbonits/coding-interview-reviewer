@@ -7,22 +7,20 @@ export interface ReviewItem {
   type: ReviewItemType;
   slug: string;
   title: string;
-  interval: number;       // days until next review
-  repetitions: number;    // consecutive successful reviews
-  efactor: number;        // ease factor; starts at 2.5, floor 1.3
-  dueDate: string;        // YYYY-MM-DD
+  interval: number;
+  repetitions: number;
+  efactor: number;
+  dueDate: string; // YYYY-MM-DD
   lastReviewed: string | null;
 }
 
-const STORAGE_KEY = "review_items";
-
 export type ContentItem = { type: ReviewItemType; slug: string; title: string };
 
-function today(): string {
+export function today(): string {
   return new Date().toISOString().split("T")[0];
 }
 
-function makeFresh(item: ContentItem): ReviewItem {
+export function makeFresh(item: ContentItem): ReviewItem {
   return {
     id: `${item.type}:${item.slug}`,
     type: item.type,
@@ -67,39 +65,6 @@ export function sm2(item: ReviewItem, quality: Quality): ReviewItem {
   };
 }
 
-export function loadAll(): Map<string, ReviewItem> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return new Map();
-    const arr = JSON.parse(raw) as ReviewItem[];
-    return new Map(arr.map((r) => [r.id, r]));
-  } catch {
-    return new Map();
-  }
-}
-
-export function saveAll(items: Map<string, ReviewItem>): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...items.values()]));
-  } catch {}
-}
-
-/**
- * Merge the canonical content list with localStorage state.
- * New items start due today; existing items keep their schedule.
- */
-export function mergeWithContent(
-  contentItems: ContentItem[],
-): ReviewItem[] {
-  const stored = loadAll();
-  const merged: ReviewItem[] = contentItems.map((ci) => {
-    const id = `${ci.type}:${ci.slug}`;
-    return stored.get(id) ?? makeFresh(ci);
-  });
-  return merged;
-}
-
-/** Items due today or overdue */
 export function getDueItems(items: ReviewItem[]): ReviewItem[] {
   const t = today();
   return items.filter((i) => i.dueDate <= t);

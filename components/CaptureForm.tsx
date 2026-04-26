@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  loadCaptures,
-  saveCapture,
-  deleteCapture,
   newCapture,
   toMdx,
   slugify,
@@ -26,30 +23,46 @@ function download(filename: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+async function apiList(): Promise<Capture[]> {
+  const res = await fetch("/api/captures");
+  if (!res.ok) return [];
+  return res.json() as Promise<Capture[]>;
+}
+
+async function apiCreate(capture: Capture): Promise<void> {
+  await fetch("/api/captures", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(capture),
+  });
+}
+
+async function apiDelete(id: string): Promise<void> {
+  await fetch(`/api/captures/${id}`, { method: "DELETE" });
+}
+
 export function CaptureForm() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [saved, setSaved] = useState(false);
-  const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setCaptures(loadCaptures());
+    apiList().then((c) => { setCaptures(c); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
   function handleChange(
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >,
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
   ) {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setSaved(false);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.title.trim()) return;
     const capture: Capture = { ...newCapture(), ...form };
-    saveCapture(capture);
-    setCaptures(loadCaptures());
+    await apiCreate(capture);
+    setCaptures(await apiList());
     setForm(EMPTY);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -57,14 +70,12 @@ export function CaptureForm() {
 
   function handleDownload(capture: Capture) {
     const slug = slugify(capture.title) || capture.id;
-    const ext = capture.type === "note" ? "mdx" : "mdx";
-    download(`${slug}.${ext}`, toMdx(capture));
+    download(`${slug}.mdx`, toMdx(capture));
   }
 
-  function handleDelete(id: string) {
-    deleteCapture(id);
-    setCaptures(loadCaptures());
-    forceUpdate();
+  async function handleDelete(id: string) {
+    await apiDelete(id);
+    setCaptures(await apiList());
   }
 
   const isValid = form.title.trim().length > 0;
@@ -74,9 +85,7 @@ export function CaptureForm() {
       <div className="rounded-xl border border-border bg-card p-6 space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1">
-            <label htmlFor="title" className="text-sm font-medium">
-              Title
-            </label>
+            <label htmlFor="title" className="text-sm font-medium">Title</label>
             <input
               id="title"
               name="title"
@@ -87,13 +96,9 @@ export function CaptureForm() {
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
-
           <div className="space-y-1">
             <label htmlFor="tags" className="text-sm font-medium">
-              Tags{" "}
-              <span className="font-normal text-muted-foreground">
-                (comma-separated)
-              </span>
+              Tags <span className="font-normal text-muted-foreground">(comma-separated)</span>
             </label>
             <input
               id="tags"
@@ -108,9 +113,7 @@ export function CaptureForm() {
         </div>
 
         <div className="space-y-1">
-          <label htmlFor="type" className="text-sm font-medium">
-            Type
-          </label>
+          <label htmlFor="type" className="text-sm font-medium">Type</label>
           <select
             id="type"
             name="type"
@@ -125,8 +128,7 @@ export function CaptureForm() {
 
         <div className="space-y-1">
           <label htmlFor="content" className="text-sm font-medium">
-            Content{" "}
-            <span className="font-normal text-muted-foreground">(Markdown)</span>
+            Content <span className="font-normal text-muted-foreground">(Markdown)</span>
           </label>
           <textarea
             id="content"
@@ -143,20 +145,18 @@ export function CaptureForm() {
           <button
             type="button"
             disabled={!isValid}
-            onClick={handleSave}
+            onClick={() => { void handleSave(); }}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
           >
             Save draft
           </button>
           {saved && (
-            <span className="text-sm text-emerald-600 dark:text-emerald-400">
-              Saved!
-            </span>
+            <span className="text-sm text-emerald-600 dark:text-emerald-400">Saved!</span>
           )}
         </div>
       </div>
 
-      {captures.length > 0 && (
+      {!loading && captures.length > 0 && (
         <section className="space-y-4">
           <h2 className="text-lg font-semibold">Saved drafts</h2>
           <ul className="space-y-3">
@@ -189,7 +189,7 @@ export function CaptureForm() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDelete(cap.id)}
+                    onClick={() => { void handleDelete(cap.id); }}
                     className="rounded border border-border px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
                   >
                     Delete
