@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "prismjs/themes/prism-tomorrow.css";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -34,8 +36,17 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      {/* Runs before hydration to apply saved theme without flash */}
+      <Script
+        id="theme-init"
+        strategy="beforeInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+        }}
+      />
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <header className="border-b border-border">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
@@ -45,7 +56,7 @@ export default function RootLayout({
             >
               Coding Interview Reviewer
             </Link>
-            <nav className="flex gap-6 text-sm">
+            <nav className="flex items-center gap-6 text-sm">
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
@@ -55,6 +66,7 @@ export default function RootLayout({
                   {link.label}
                 </Link>
               ))}
+              <ThemeToggle />
             </nav>
           </div>
         </header>

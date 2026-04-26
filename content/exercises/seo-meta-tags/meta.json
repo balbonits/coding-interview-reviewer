@@ -1,0 +1,9 @@
+{
+  "slug": "seo-meta-tags",
+  "title": "SEO Meta Tag Builder",
+  "tags": ["seo", "html", "typescript", "structured-data"],
+  "difficulty": "easy",
+  "estimatedMinutes": 20,
+  "concepts": ["open-graph", "twitter-cards", "json-ld", "canonical-url", "meta-description"],
+  "template": "vanilla-ts"
+}

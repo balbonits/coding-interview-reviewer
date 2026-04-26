@@ -1,0 +1,73 @@
+---
+title: "SEO Meta Tag Builder"
+---
+
+Implement `buildPageMeta(config: PageConfig): PageMeta` — a utility function that generates all `<head>` tags needed for a well-optimised blog article page.
+
+## Types (already in the starter)
+
+```ts
+interface PageConfig {
+  title: string;
+  description: string;
+  url: string;        // absolute canonical URL
+  image: string;      // absolute URL for social preview image
+  publishedAt?: string; // ISO 8601 date string, e.g. "2025-01-15"
+}
+
+interface MetaTag {
+  name?: string;      // for <meta name="...">
+  property?: string;  // for <meta property="...">
+  content: string;
+}
+
+interface ArticleSchema {
+  '@context': 'https://schema.org';
+  '@type': 'Article' | 'WebPage';
+  headline: string;
+  description: string;
+  image: string;
+  url: string;
+  datePublished?: string;
+}
+
+interface PageMeta {
+  metaTags: MetaTag[];
+  canonical: string;  // the URL for <link rel="canonical">
+  jsonLd: ArticleSchema;
+}
+```
+
+## Requirements
+
+Your `metaTags` array must include **all** of the following:
+
+| Tag | Attribute | Required value |
+|-----|-----------|----------------|
+| `<meta name="description">` | `content` | `config.description` |
+| `<meta name="robots">` | `content` | `"index, follow"` |
+| `<meta property="og:type">` | `content` | `"article"` |
+| `<meta property="og:title">` | `content` | `config.title` |
+| `<meta property="og:description">` | `content` | `config.description` |
+| `<meta property="og:image">` | `content` | `config.image` |
+| `<meta property="og:url">` | `content` | `config.url` |
+| `<meta name="twitter:card">` | `content` | `"summary_large_image"` |
+| `<meta name="twitter:title">` | `content` | `config.title` |
+| `<meta name="twitter:description">` | `content` | `config.description` |
+| `<meta name="twitter:image">` | `content` | `config.image` |
+
+`canonical` must equal `config.url`.
+
+`jsonLd` must be a valid [Article](https://schema.org/Article) schema:
+- `@context` → `"https://schema.org"`
+- `@type` → `"Article"`
+- `headline`, `description`, `image`, `url` from config
+- `datePublished` → `config.publishedAt` when provided; omit the field otherwise
+
+## Why this matters in interviews
+
+Any front-end role that touches content pages asks SEO questions. Interviewers want to see that you know:
+1. The difference between `name` and `property` attributes on `<meta>` (OG uses `property`).
+2. Why a `canonical` URL matters (prevents duplicate-content penalties from pagination/UTM params).
+3. Why JSON-LD is preferred over microdata or RDFa (easier to maintain, parseable without reading DOM).
+4. What `twitter:card = summary_large_image` controls (large social-preview image, not just the icon).

@@ -1,0 +1,9 @@
+{
+  "slug": "mfe-registry",
+  "title": "Micro-Frontend App Shell Registry",
+  "tags": ["architecture", "microservices", "microfrontend", "typescript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 30,
+  "concepts": ["microfrontend", "app-shell", "route-matching", "registry-pattern"],
+  "template": "vanilla-ts"
+}

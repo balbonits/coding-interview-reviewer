@@ -1,0 +1,9 @@
+{
+  "slug": "a11y-refactor",
+  "title": "Accessible Form Refactor",
+  "tags": ["accessibility", "react", "html", "ux-ui"],
+  "difficulty": "easy",
+  "estimatedMinutes": 25,
+  "concepts": ["aria", "semantic-html", "wcag", "live-regions", "form-accessibility"],
+  "template": "react"
+}

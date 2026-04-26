@@ -1,0 +1,69 @@
+---
+title: "Micro-Frontend App Shell Registry"
+---
+
+In a **micro-frontend (MFE) architecture**, a single **app shell** owns the URL bar and delegates rendering to independently-deployed child apps, each of which owns one or more URL prefixes.
+
+Implement `MfeRegistry` — the routing heart of an app shell.
+
+## API
+
+```ts
+interface MfeConfig {
+  name: string;    // unique identifier, e.g. "checkout"
+  url: string;     // remote entry point, e.g. "https://checkout.cdn.com/remoteEntry.js"
+  routes: string[];// URL prefixes this MFE owns, e.g. ["/checkout", "/cart"]
+}
+
+class MfeRegistry {
+  register(config: MfeConfig): void;
+  resolve(path: string): MfeConfig | undefined;
+  list(): MfeConfig[];
+  unregister(name: string): boolean;
+}
+```
+
+## Behaviour
+
+- **`register(config)`**
+  - Adds the MFE to the registry.
+  - Throws `Error` if `config.name` is already registered.
+  - Throws `Error` if any of `config.routes` is already claimed by another MFE.
+- **`resolve(path)`**
+  - Returns the `MfeConfig` whose route prefix matches `path` (i.e. `path.startsWith(route)`).
+  - If multiple prefixes match, return the one with the **longest** prefix (most specific wins).
+  - Returns `undefined` if no registered route matches.
+- **`list()`** — returns all registered configs in insertion order.
+- **`unregister(name)`** — removes the MFE and all its claimed routes; returns `true` if found, `false` if not.
+
+## Example
+
+```ts
+const registry = new MfeRegistry();
+registry.register({ name: 'shop', url: '...', routes: ['/shop'] });
+registry.register({ name: 'pdp', url: '...', routes: ['/shop/product'] });
+
+registry.resolve('/shop/cart');          // → shop config  (prefix "/shop")
+registry.resolve('/shop/product/123');   // → pdp config   (prefix "/shop/product" wins)
+registry.resolve('/account');            // → undefined
+```
+
+## Hints
+
+<details>
+<summary>Reveal hints</summary>
+
+- Keep a `Map<string, MfeConfig>` keyed by name and a `Map<string, string>` mapping each route prefix to its owner name.
+- For route conflict detection, iterate `config.routes` and check the route-to-owner map before inserting.
+- For `resolve`, collect all prefix matches, then reduce to the longest one. `Array.prototype.reduce` works cleanly here.
+- `unregister` must clean up both maps.
+
+</details>
+
+## Why this matters in interviews
+
+MFE questions appear in system-design rounds at companies using Module Federation or single-spa. Interviewers probe whether you understand:
+1. That the shell owns routing — child apps never touch the URL bar directly.
+2. How ownership conflicts are detected at registration time (not at runtime).
+3. Why longest-prefix wins is necessary (e.g. `/shop/product` must beat `/shop`).
+4. The difference between the shell's job (routing, auth, shared deps) and the MFE's job (feature rendering).

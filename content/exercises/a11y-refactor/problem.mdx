@@ -1,0 +1,47 @@
+---
+title: "Accessible Form Refactor"
+---
+
+The form below has **five accessibility violations**. Fix all of them without changing the visible structure, text content, or behaviour.
+
+```jsx
+// starter — broken form
+<div>
+  <div style={{ color: 'red' }}>{error}</div>
+  <input placeholder="Your name" ... />
+  <div onClick={handleSubmit}>Submit</div>
+</div>
+```
+
+## The five violations
+
+| # | Violation | WCAG criterion |
+|---|-----------|----------------|
+| 1 | `<input>` has no programmatic label — only a `placeholder` | 1.3.1 Info and Relationships |
+| 2 | Submit control is a `<div onClick>`, not keyboard-reachable | 2.1.1 Keyboard |
+| 3 | Error region is a plain `<div>` — screen readers won't announce it | 4.1.3 Status Messages |
+| 4 | `<input>` is not linked to the error via `aria-describedby` | 1.3.1 Info and Relationships |
+| 5 | `<input>` doesn't carry `aria-invalid` when the field is invalid | 4.1.2 Name, Role, Value |
+
+## Requirements
+
+- Fix each violation using the minimal change needed.
+- You may add attributes (`htmlFor`, `id`, `role`, `aria-*`) and swap element types.
+- Do not change the error text `"Name is required"`, the label text `"Your name"`, or the button text `"Submit"`.
+
+## Hints
+
+<details>
+<summary>Reveal hints</summary>
+
+1. **Label** — use `<label htmlFor="some-id">` paired with `id="some-id"` on the input, *or* add `aria-label` directly on the input.
+2. **Button** — swap `<div onClick>` for `<button type="button" onClick>`. Native `<button>` elements are keyboard-focusable and fire `click` on `Enter`/`Space` without extra wiring.
+3. **Live region** — add `role="alert"` to the error container (an `alert` role implies `aria-live="assertive"`). Give it an `id` so violation #4 can reference it.
+4. **`aria-describedby`** — set `aria-describedby={error ? 'error-id' : undefined}` on the input; absent is cleaner than `aria-describedby=""`.
+5. **`aria-invalid`** — set `aria-invalid={error ? 'true' : undefined}`. Omitting the attribute is equivalent to `aria-invalid="false"`.
+
+</details>
+
+## Why this matters in interviews
+
+WCAG compliance questions appear regularly in front-end roles at companies with large user bases. Interviewers test whether you know the difference between a visual affordance (`placeholder`, `cursor: pointer`) and a semantic one (`<label>`, `<button>`, `aria-*`). Getting all five right in under 30 minutes signals production-grade a11y instincts.
