@@ -1,36 +1,189 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Coding Interview Reviewer
 
-## Getting Started
+A personal front-end interview prep workspace — built entirely with AI (Claude Code + Claude Sonnet). Live coding exercises, review notes, an AI mock interviewer, spaced repetition, a tech news feed, and a quick capture form. Runs fully local: no cloud services, no subscriptions beyond what you already have.
 
-First, run the development server:
+> **Built with AI, not boilerplate.** Every feature, exercise, note, and architectural decision in this project was generated through a conversation with Claude Code. This is a real working app, not a demo.
+
+---
+
+## Features
+
+### `/exercises` — In-browser coding exercises
+- Live code editor powered by [Sandpack](https://sandpack.codesandbox.io/) (real browser runtime, no backend)
+- Auto-graded tests that run in the browser as you type
+- Reveal solution with a toggle
+- AI panel: **Hint**, **Review my code**, **Explain the concept** — reads your live code and streams a response from the local LLM
+- 5 template types: `vanilla` JS, `vanilla-ts` TypeScript, `react` JSX, `react-ts` TSX, `node`
+
+### `/notes` — MDX note library
+- Markdown + JSX notes with Prism syntax highlighting
+- Tag filtering at `/tags/[tag]`
+- 12 notes covering: closures, React 19 hooks, TypeScript, REST APIs, MongoDB, Node.js, SEO, UX/UI, microservices/MFEs, modern HTML, CSS, and JavaScript
+
+### `/interview` — AI mock interviewer
+- Streaming chat with a local LLM role-playing a senior front-end engineer
+- Asks one question at a time, follows up on weak answers, varies question style (conceptual, trade-off, debugging, coding)
+- Full session history persisted to MongoDB — resumable
+- Markdown rendering in responses (bold, lists, code blocks)
+- Context window trimming to stay within the model's token budget
+
+### `/review` — Spaced repetition
+- SM-2 algorithm: **Again / Hard / Good / Easy** grading
+- Due-today queue, seeded from your exercise library
+- Review items and grades persisted to MongoDB
+
+### `/news` — Tech news feed
+- Aggregates RSS from: JavaScript Weekly, CSS Weekly, Smashing Magazine, Dev.to
+- Per-item AI summarization (streams from local LLM)
+- 1-hour client-side cache
+
+### `/capture` — Quick capture
+- Paste a snippet, URL, or thought — saves to MongoDB
+- Download any capture as an `.mdx` file ready to drop into `/content/notes`
+
+---
+
+## Exercises (15 total)
+
+| Exercise | Topic | Template |
+|---|---|---|
+| Two Sum | DSA — hash map | vanilla |
+| FizzBuzz | DSA — basics | vanilla |
+| Debounce | JS patterns | vanilla |
+| Linked List | DSA — doubly linked list + reverse | vanilla-ts |
+| Tree Traversal | DSA — pre/in/post/level order | vanilla-ts |
+| LRU Cache | DSA — Map insertion-order trick | vanilla-ts |
+| Resilient Fetch | REST — retry + timeout | vanilla |
+| Mongo Query Matcher | MongoDB — predicate engine | vanilla |
+| Rate Limiter | Node.js — sliding window | vanilla |
+| Type-Safe Pick | TypeScript — generics | vanilla-ts |
+| SEO Meta Tags | SEO — OG/Twitter/JSON-LD builder | vanilla-ts |
+| MFE Registry | Microfrontends — prefix router | vanilla-ts |
+| use-toggle | React — custom hook | react |
+| a11y Refactor | Accessibility — WCAG / ARIA | react |
+
+---
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 16.2.4 (App Router, Turbopack) |
+| UI | React 19.2.4, TypeScript, Tailwind v4, shadcn/ui |
+| Content | MDX via `next-mdx-remote/rsc`, `gray-matter`, `rehype-prism-plus` |
+| Code editor | `@codesandbox/sandpack-react` |
+| AI | [Ollama](https://ollama.com) at `localhost:11434`, model `qwen2.5:14b` |
+| Database | MongoDB at `localhost:27017` (Node.js driver, singleton connection) |
+| Markdown | `react-markdown` (chat), Prism Tomorrow theme (notes/exercises) |
+
+---
+
+## Prerequisites
+
+- **Node.js** ≥ 18
+- **MongoDB** — `brew tap mongodb/brew && brew install mongodb-community`
+- **Ollama** — [ollama.com/download](https://ollama.com/download), then:
+  ```bash
+  ollama pull qwen2.5:14b
+  ```
+
+---
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/balbonits/coding-interview-reviewer.git
+cd coding-interview-reviewer
+npm install
+npm run dev:local   # starts Ollama + MongoDB + Next.js in one command
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`npm run dev:local` uses `scripts/dev.sh` which:
+1. Checks if `ollama` is running — starts it if not
+2. Checks if `mongod` is running — starts it via Homebrew service or direct binary if not
+3. Runs `next dev`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+All have sensible defaults — no `.env` file required to get started.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Variable | Default | Description |
+|---|---|---|
+| `MONGODB_URI` | `mongodb://localhost:27017` | MongoDB connection string |
+| `MONGODB_DB` | `coding-interview-reviewer` | Database name |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama base URL |
+| `OLLAMA_INTERVIEW_MODEL` | `qwen2.5:14b` | Model for the interview chatbot |
+| `OLLAMA_NUM_CTX` | `4096` | Context window size (tokens) |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+For memory-constrained machines, set `OLLAMA_MAX_LOADED_MODELS=1` in your shell to prevent two models from co-loading.
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  interview/          # AI mock interviewer (streaming chat)
+  exercises/          # Exercise browser + Sandpack runner
+  notes/              # MDX note library
+  review/             # Spaced repetition queue
+  news/               # RSS tech news feed
+  capture/            # Quick capture form
+  api/
+    ai/interview/     # Streams chat from Ollama
+    ai/exercise/      # Hint / review / explain for exercises
+    sessions/         # CRUD for interview sessions (MongoDB)
+    review-items/     # CRUD for SRS items (MongoDB)
+    captures/         # CRUD for captures (MongoDB)
+    news/             # RSS aggregator
+
+content/
+  exercises/<slug>/   # meta.json, problem.mdx, starter, solution, tests
+  notes/<slug>.mdx    # frontmatter (title, tags) + Markdown body
+
+lib/
+  mongodb.ts          # Connection singleton
+  ollama.ts           # streamChat() wrapper
+  spaced-repetition.ts # SM-2 algorithm
+  rss.ts              # RSS/Atom parser + feed list
+  exercises.ts        # Exercise loader
+  captures.ts         # Capture helpers
+  interviewSessions.ts # Session API client
+
+components/
+  ExerciseSandbox.tsx # Sandpack + AI panel
+  ReviewQueue.tsx     # SRS grading UI
+  NewsFeed.tsx        # News + summarization UI
+  CaptureForm.tsx     # Quick capture UI
+  ThemeToggle.tsx     # Dark/light mode toggle
+  ui/                 # shadcn/ui primitives
+```
+
+---
+
+## Adding content
+
+**New note** — create `content/notes/<slug>.mdx`:
+```yaml
+---
+title: "Your Title"
+tags: ["javascript", "react"]
+---
+```
+
+**New exercise** — create `content/exercises/<slug>/` with 5 files:
+- `meta.json` — `{ slug, title, tags, difficulty, estimatedMinutes, concepts, template }`
+- `problem.mdx` — problem statement
+- `starter.{js|ts|jsx|tsx}` — initial editor code
+- `solution.{js|ts|jsx|tsx}` — reference solution
+- `tests.{js|ts|jsx|tsx}` — Vitest-style assertions
+
+---
+
+## About
+
+Built as a portfolio piece and personal prep tool by [John Dilig](https://github.com/balbonits). Every line of code was written in collaboration with [Claude Code](https://claude.ai/code) (Anthropic) — from architecture decisions to debugging obscure Next.js fetch caching behavior. The goal was to see how far a single person with AI assistance could get in a few days of focused work.
