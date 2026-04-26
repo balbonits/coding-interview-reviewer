@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
-# Start MongoDB (if not already running) then launch the Next.js dev server.
+# Start MongoDB + Ollama (if not already running) then launch the Next.js dev server.
 set -euo pipefail
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
 die() { echo "✗ $*" >&2; exit 1; }
+
+# Poll until Ollama accepts connections on :11434 (max ~6 s).
+wait_for_ollama() {
+  local i=0
+  while (( i < 20 )); do
+    (echo >/dev/tcp/127.0.0.1/11434) &>/dev/null && return 0
+    sleep 0.3
+    i=$(( i + 1 ))
+  done
+  return 1
+}
 
 # Poll until mongod accepts TCP connections (max ~6 s).
 wait_for_mongo() {
@@ -22,6 +33,27 @@ wait_for_mongo() {
   done
   return 1
 }
+
+# ─── ollama check / start ─────────────────────────────────────────────────────
+
+if pgrep -x ollama &>/dev/null; then
+  echo "✓ ollama already running"
+else
+  if command -v ollama &>/dev/null; then
+    echo "  ollama not running — starting…"
+    ollama serve &>/tmp/ollama.log &
+    wait_for_ollama \
+      || die "ollama started but is not accepting connections on :11434"
+    echo "✓ ollama started"
+  else
+    die "ollama not found on PATH.
+
+Install Ollama:
+  brew install ollama
+
+Or download from https://ollama.com/download"
+  fi
+fi
 
 # ─── mongod check / start ─────────────────────────────────────────────────────
 
