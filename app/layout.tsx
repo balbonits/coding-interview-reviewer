@@ -27,6 +27,7 @@ const navLinks = [
   { href: "/exercises", label: "Exercises" },
   { href: "/review", label: "Review" },
   { href: "/interview", label: "Interview" },
+  { href: "/news", label: "News" },
   { href: "/capture", label: "Capture" },
 ];
 
