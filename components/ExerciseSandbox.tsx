@@ -6,6 +6,7 @@ import {
   SandpackLayout,
   SandpackCodeEditor,
   SandpackTests,
+  useSandpack,
   type SandpackFiles,
 } from "@codesandbox/sandpack-react";
 import type { SandpackTemplate } from "@/lib/exercises";
@@ -15,6 +16,7 @@ type Props = {
   tests: string;
   solution: string;
   template?: SandpackTemplate;
+  problem?: string;
 };
 
 type TemplateFileShape = {
@@ -74,11 +76,108 @@ function fileShapeForTemplate(template: SandpackTemplate): TemplateFileShape {
   }
 }
 
+type AiAction = "hint" | "review" | "explain";
+
+const ACTION_LABELS: Record<AiAction, string> = {
+  hint: "Hint",
+  review: "Review my code",
+  explain: "Explain the concept",
+};
+
+function AiPanel({ problem }: { problem: string }) {
+  const { sandpack } = useSandpack();
+  const [response, setResponse] = useState("");
+  const [loading, setLoading] = useState<AiAction | null>(null);
+  const [open, setOpen] = useState(false);
+
+  async function ask(action: AiAction) {
+    const activeCode = sandpack.files[sandpack.activeFile]?.code ?? "";
+    setLoading(action);
+    setOpen(true);
+    setResponse("");
+
+    try {
+      const res = await fetch("/api/ai/exercise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, code: activeCode, problem }),
+      });
+
+      if (!res.ok || !res.body) {
+        const err = await res.text().catch(() => "");
+        setResponse(`Error: ${err || res.statusText}`);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const chunk = JSON.parse(line);
+            const token: string = chunk?.message?.content ?? "";
+            if (token) setResponse((prev) => prev + token);
+          } catch {
+            // skip malformed lines
+          }
+        }
+      }
+    } catch (e) {
+      setResponse(`Failed to reach Ollama: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {(["hint", "review", "explain"] as AiAction[]).map((action) => (
+          <button
+            key={action}
+            type="button"
+            disabled={loading !== null}
+            onClick={() => ask(action)}
+            className="rounded border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {loading === action ? "..." : ACTION_LABELS[action]}
+          </button>
+        ))}
+      </div>
+
+      {open && (
+        <div className="relative rounded-lg border border-border bg-card p-4 text-sm">
+          <button
+            type="button"
+            aria-label="Close AI response"
+            onClick={() => setOpen(false)}
+            className="absolute right-3 top-3 text-xs text-muted-foreground hover:text-foreground"
+          >
+            ✕
+          </button>
+          <pre className="whitespace-pre-wrap font-sans leading-relaxed">
+            {response || (loading ? "Thinking…" : "")}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExerciseSandbox({
   starter,
   tests,
   solution,
   template = "vanilla",
+  problem = "",
 }: Props) {
   const [showSolution, setShowSolution] = useState(false);
   const shape = fileShapeForTemplate(template);
@@ -105,6 +204,8 @@ export function ExerciseSandbox({
             style={{ height: "480px" }}
           />
         </SandpackLayout>
+
+        {problem && <AiPanel problem={problem} />}
       </SandpackProvider>
 
       <details

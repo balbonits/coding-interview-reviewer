@@ -93,6 +93,7 @@ export default async function ExercisePage({
         tests={exercise.tests}
         solution={exercise.solution}
         template={exercise.template}
+        problem={exercise.problemContent}
       />
     </article>
   );
