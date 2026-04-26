@@ -36,12 +36,11 @@ export const FEEDS: FeedConfig[] = [
 ];
 
 function extractTag(xml: string, tag: string): string {
-  const re = new RegExp(
-    `<${tag}[^>]*>(?:<!\[CDATA\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`,
-    "i",
-  );
-  const m = xml.match(re);
-  if (!m) return "";
+  // Two-pass: try CDATA-wrapped, then plain text
+  const cdataRe = new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>`, "i");
+  const plainRe = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const m = cdataRe.exec(xml) ?? plainRe.exec(xml);
+  if (!m || m[1] == null) return "";
   return m[1].trim().replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
 }
 
