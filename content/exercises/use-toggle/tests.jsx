@@ -1,4 +1,5 @@
 import { render, fireEvent, screen } from '@testing-library/react';
+// React template: Sandpack mounts the file as /Starter.jsx, so the import uses capital S.
 import { useToggle } from './Starter';
 
 // A tiny harness that exposes the hook's behavior to the DOM,

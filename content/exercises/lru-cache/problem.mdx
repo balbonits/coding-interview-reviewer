@@ -29,9 +29,15 @@ class LRUCache<K, V> {
 
 ## Hints
 
-- Native `Map` preserves **insertion order**. You can lean on that to track recency: every time a key is accessed, `delete` and re-`set` it. The first key in the iterator is then the LRU.
-- `Map.prototype.keys().next().value` gives you the LRU key in O(1) without iterating.
-- The classic textbook solution uses a doubly linked list + hashmap to get true O(1). The Map-based approach is a JavaScript-idiomatic shortcut that achieves the same Big-O thanks to V8's implementation of insertion-ordered keys.
+- The classic textbook solution uses a doubly linked list + hashmap. JavaScript has a native shortcut that achieves the same Big-O — think about which built-in collection preserves insertion order.
+
+<details>
+<summary>Reveal implementation hint</summary>
+
+- Native `Map` preserves **insertion order**. Every time a key is accessed, `delete` and re-`set` it — the first key in the iterator is then the LRU.
+- `Map.prototype.keys().next().value` gives you the LRU key in O(1) without iterating. Note: this is typed `K | undefined`, so guard before deleting.
+
+</details>
 
 ## Why this matters in interviews
 

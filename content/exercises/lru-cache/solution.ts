@@ -17,8 +17,9 @@ export class LRUCache<K, V> {
     if (this.store.has(key)) {
       this.store.delete(key);
     } else if (this.store.size >= this.capacity) {
-      const oldest = this.store.keys().next().value as K;
-      this.store.delete(oldest);
+      // store is non-empty (size >= capacity > 0), so .next().value is defined
+      const oldest = this.store.keys().next().value;
+      if (oldest !== undefined) this.store.delete(oldest);
     }
     this.store.set(key, value);
   }

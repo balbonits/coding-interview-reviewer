@@ -1,7 +1,8 @@
 // TODO: implement a generic doubly linked list.
 // All operations except toArray and reverse must be O(1).
 export class LinkedList<T> {
-  // your fields here
+  // Hint: define a private Node<T> type: { value: T; prev: Node<T> | null; next: Node<T> | null }
+  // Keep head, tail pointers and a _size counter as fields.
 
   push(_value: T): void {
     // append to tail
