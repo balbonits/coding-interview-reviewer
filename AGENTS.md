@@ -4,6 +4,79 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# First-time setup (run this before anything else)
+
+If the user has just cloned this repo, walk through these steps in order. Check each one before moving on — do not assume anything is already installed.
+
+## 1. Node.js
+```bash
+node --version   # must be ≥ 18
+```
+If missing: `brew install node` or https://nodejs.org
+
+## 2. Dependencies
+```bash
+npm install
+```
+
+## 3. Ollama
+```bash
+ollama --version
+```
+If missing: `brew install ollama` or https://ollama.com/download
+
+Then confirm the required model is pulled:
+```bash
+ollama list | grep qwen2.5:14b
+```
+If not listed:
+```bash
+ollama pull qwen2.5:14b   # ~9 GB — takes a few minutes on first run
+```
+> The model name can be overridden with `OLLAMA_INTERVIEW_MODEL` env var. `dev.sh` will auto-pull it on first `npm run dev:local` if it's missing.
+
+### Choosing a model based on available RAM
+
+Before pulling, check the user's available RAM:
+```bash
+# macOS
+sysctl -n hw.memsize | awk '{print $1/1024/1024/1024 " GB"}'
+```
+
+| Available RAM | Recommended model | Pull command |
+|---|---|---|
+| ≥ 16 GB | `qwen2.5:14b` (default, best quality) | `ollama pull qwen2.5:14b` |
+| 8–16 GB | `qwen2.5:7b` (good quality, ~4.5 GB) | `ollama pull qwen2.5:7b` |
+| < 8 GB | `qwen2.5:3b` (lighter, ~2 GB) | `ollama pull qwen2.5:3b` |
+
+If the user picks a smaller model, set it in their shell or `.env.local`:
+```bash
+OLLAMA_INTERVIEW_MODEL=qwen2.5:7b npm run dev:local
+# or add to .env.local:
+# OLLAMA_INTERVIEW_MODEL=qwen2.5:7b
+```
+
+**Warning signs that the model is too large:** system becomes unresponsive while the model loads, responses are extremely slow (> 60s for first token), or `ollama serve` logs show swap usage. If any of these occur, recommend switching to a smaller model.
+
+## 4. MongoDB
+```bash
+mongod --version
+```
+If missing:
+```bash
+brew tap mongodb/brew && brew install mongodb-community
+```
+
+## 5. Start the app
+```bash
+npm run dev:local
+```
+This runs `scripts/dev.sh` which: starts Ollama if not running → auto-pulls the model if not present → starts MongoDB if not running → runs `next dev`.
+
+Open http://localhost:3000 — all features should work immediately. No `.env` file needed.
+
+---
+
 # Project: Coding Interview Reviewer
 
 Personal front-end interview prep workspace for John (the user). Built day 1 as local-only MVP. Long-term goal: deploy as a public portfolio piece.
@@ -74,34 +147,18 @@ Mapping lives in `lib/exercises.ts` (`TEMPLATE_EXT`) and `components/ExerciseSan
 - `OLLAMA_NUM_CTX` — default `4096`. Lower this if you need to shrink the KV cache further.
 - Recommend setting `OLLAMA_MAX_LOADED_MODELS=1` in your shell so two models can't co-load. `keep_alive` is hard-coded to `2m` in `lib/ollama.ts` so the model unloads quickly when idle.
 
-## Day 2+ priorities (in user's stated order of urgency)
+## What's shipped
 
-1. **Subject coverage expansion** — user wants exercises + notes spanning: DSA, React, TypeScript, RESTful APIs, microservices/microfrontend, JS/ECMAScript core, Node.js/server-side, MongoDB, UX/UI design, SEO, modern HTML, modern CSS.
-   - **Day 1 seeded** (3 exercises, 6 notes): two-sum, fizzbuzz, debounce; closures, React 19 hooks, TS modern, modern CSS/HTML/JS.
-   - **Day 2 seeded** (3 exercises, 6 notes): resilient-fetch (REST), mongo-query-matcher (Mongo), rate-limiter (Node); rest-apis, mongodb, node-server-side, seo, ux-ui, microservices-microfrontend.
-   - **Day 3 seeded** (5 exercises, 0 new notes): use-toggle (React), type-safe-pick (TS), linked-list / tree-traversal / lru-cache (DSA, vanilla-ts).
-   - **Day 4 seeded** (4 exercises): a11y-refactor (react), seo-meta-tags (vanilla-ts), mfe-registry (vanilla-ts), plus all prior Day 3 exercises.
-   - **Remaining content gaps**: none currently — all subject areas have at least one exercise.
-2. ~~**Sandpack template support**~~ ✓ Done
-3. ~~**Manual dark mode toggle**~~ ✓ Done — ThemeToggle client component, beforeInteractive script for FOUC prevention
-4. **Deploy to Vercel** — app is Vercel-ready (generateStaticParams on all dynamic routes, nodejs runtime on API routes); blocked on Ollama not being available in cloud. Cloud LLM strategy TBD (free Gemini or Anthropic API).
-5. ~~**Firebase Auth + Firestore**~~ → **Replaced by local MongoDB** ✓ Done — `mongodb` driver, `lib/mongodb.ts` singleton, API routes for sessions/review-items/captures. App is local-only per user preference.
-6. ~~**AI side-features**~~ ✓ Done — `/api/ai/exercise` handles hint/review/explain; ExerciseSandbox has AiPanel using useSandpack for live code.
-7. ~~**Spaced repetition**~~ ✓ Done — SM-2 in `lib/spaced-repetition.ts`, ReviewQueue component, `/review` page, persisted to MongoDB.
-8. ~~**News feed**~~ ✓ Done — `/news` page, `/api/news` RSS aggregator (JS Weekly, CSS Weekly, Smashing, Dev.to), per-item Ollama summarization, 1-hour cache.
-9. ~~**Quick capture form**~~ ✓ Done — `/capture` page, CaptureForm component, MDX download, persisted to MongoDB.
+All core features are complete. The app is local-only by design (Ollama can't run in the cloud).
 
-## Important context about the user
+- **`/exercises`** — Sandpack exercises, 5 templates, auto-graded tests, reveal solution, AI hint/review/explain panel
+- **`/notes`** — MDX note library, tag filtering, 12 notes across all front-end subjects
+- **`/interview`** — Streaming AI mock interviewer, sessions in MongoDB, Markdown rendering
+- **`/review`** — SM-2 spaced repetition queue, MongoDB-backed
+- **`/news`** — RSS aggregator (JS Weekly, CSS Weekly, Smashing, Dev.to), per-item AI summarization
+- **`/capture`** — Quick capture form, MongoDB persistence, MDX export
+- **Dark mode** — ThemeToggle component, FOUC-free inline script, localStorage persistence
 
-- **Currently unemployed** — already pays $200/mo for Claude Max; cannot afford additional paid services. Default to free tools (Ollama, Gemini free tier, Vercel free tier).
-- **Front-end interview candidate** — building this as both prep tool AND portfolio piece. Quality of code and content matters for portfolio signal.
-- **HTML/CSS/JS knowledge from 2008** — needs current best practices in notes (handled in 3 "modern X" notes already shipped).
-- **Do not skip the local-only constraint** until user explicitly asks to deploy.
+Content: 15 exercises, 12 notes spanning DSA, React, TypeScript, REST APIs, Node.js, MongoDB, SEO, UX/UI, microservices/MFEs, modern HTML/CSS/JS.
 
-## Planning artifacts
-
-The full Day 1 plan is in `~/.claude/plans/i-need-help-in-shiny-sunset.md`. Read it before changing architecture. The plan reflects user-approved decisions (stack, three cores, working method).
-
-## Working method
-
-Spec-driven, front-to-back. Day 1 specs are inline in the plan file (compressed for the time budget). Day 2+ specs should live in `/specs/<phase>-<feature>.md` with: user stories, UI sketch, state matrix, TypeScript data contract, acceptance criteria, out-of-scope.
+**Deploy is deferred** — blocked on cloud LLM strategy. Do not suggest Vercel or cloud hosting unless the user raises it.

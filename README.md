@@ -82,10 +82,15 @@ A personal front-end interview prep workspace — built entirely with AI (Claude
 
 - **Node.js** ≥ 18
 - **MongoDB** — `brew tap mongodb/brew && brew install mongodb-community`
-- **Ollama** — [ollama.com/download](https://ollama.com/download), then:
-  ```bash
-  ollama pull qwen2.5:14b
-  ```
+- **Ollama** — [ollama.com/download](https://ollama.com/download), then pull a model based on your RAM:
+
+  | RAM | Model | Command |
+  |---|---|---|
+  | ≥ 16 GB | `qwen2.5:14b` (default, best quality) | `ollama pull qwen2.5:14b` |
+  | 8–16 GB | `qwen2.5:7b` | `ollama pull qwen2.5:7b` |
+  | < 8 GB | `qwen2.5:3b` | `ollama pull qwen2.5:3b` |
+
+  If you use a smaller model, set `OLLAMA_INTERVIEW_MODEL=qwen2.5:7b` in `.env.local`. The startup script will warn you and pause before pulling the 14B model on a low-memory machine.
 
 ---
 

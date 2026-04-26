@@ -36,23 +36,57 @@ wait_for_mongo() {
 
 # ─── ollama check / start ─────────────────────────────────────────────────────
 
-if pgrep -x ollama &>/dev/null; then
-  echo "✓ ollama already running"
-else
-  if command -v ollama &>/dev/null; then
-    echo "  ollama not running — starting…"
-    ollama serve &>/tmp/ollama.log &
-    wait_for_ollama \
-      || die "ollama started but is not accepting connections on :11434"
-    echo "✓ ollama started"
-  else
-    die "ollama not found on PATH.
+OLLAMA_MODEL="${OLLAMA_INTERVIEW_MODEL:-qwen2.5:14b}"
+
+if ! command -v ollama &>/dev/null; then
+  die "ollama not found on PATH.
 
 Install Ollama:
   brew install ollama
 
 Or download from https://ollama.com/download"
+fi
+
+if pgrep -x ollama &>/dev/null; then
+  echo "✓ ollama already running"
+else
+  echo "  ollama not running — starting…"
+  ollama serve &>/tmp/ollama.log &
+  wait_for_ollama \
+    || die "ollama started but is not accepting connections on :11434"
+  echo "✓ ollama started"
+fi
+
+# Ensure the required model is pulled.
+if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "${OLLAMA_MODEL}"; then
+  echo "✓ model ${OLLAMA_MODEL} ready"
+else
+  # Warn if RAM is likely too low for the default 14B model.
+  if [[ "${OLLAMA_MODEL}" == "qwen2.5:14b" ]]; then
+    RAM_GB=0
+    if [[ "$(uname)" == "Darwin" ]]; then
+      RAM_GB=$(sysctl -n hw.memsize 2>/dev/null | awk '{printf "%d", $1/1024/1024/1024}')
+    elif [[ -f /proc/meminfo ]]; then
+      RAM_GB=$(awk '/MemTotal/{printf "%d", $2/1024/1024}' /proc/meminfo)
+    fi
+    if (( RAM_GB > 0 && RAM_GB < 16 )); then
+      echo ""
+      echo "⚠️  RAM warning: you have ~${RAM_GB} GB RAM."
+      echo "   qwen2.5:14b needs ~10 GB free to run comfortably."
+      echo ""
+      echo "   Recommended alternatives:"
+      echo "     8–16 GB → qwen2.5:7b  (~4.5 GB):  OLLAMA_INTERVIEW_MODEL=qwen2.5:7b"
+      echo "     < 8 GB  → qwen2.5:3b  (~2 GB):    OLLAMA_INTERVIEW_MODEL=qwen2.5:3b"
+      echo ""
+      echo "   Press Enter to pull ${OLLAMA_MODEL} anyway, or Ctrl-C to abort."
+      read -r
+    fi
   fi
+
+  echo "  model ${OLLAMA_MODEL} not found — pulling (this may take a while)…"
+  ollama pull "${OLLAMA_MODEL}" \
+    || die "Failed to pull ${OLLAMA_MODEL}. Check your internet connection."
+  echo "✓ model ${OLLAMA_MODEL} pulled"
 fi
 
 # ─── mongod check / start ─────────────────────────────────────────────────────
