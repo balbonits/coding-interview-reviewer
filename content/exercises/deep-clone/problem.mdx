@@ -1,0 +1,31 @@
+---
+title: "Deep Clone"
+---
+
+Implement `deepClone(value)` — a structural clone that copies plain objects and arrays recursively, with a few real-world wrinkles you'll meet in interviews.
+
+## Requirements
+
+- **Primitives** are returned as-is (`number`, `string`, `boolean`, `null`, `undefined`, `bigint`, `symbol`, functions).
+- **Plain objects and arrays** are deeply cloned. The result is a *new* reference at every level — mutating the clone must not affect the source.
+- **`Date`** is cloned to a new `Date` with the same time.
+- **`Map` and `Set`** are cloned to new instances; their contents are deep-cloned too.
+- **Circular references** must be preserved. `a.self === a` should still hold for the clone.
+
+## Examples
+
+```js
+const a = { x: 1, nested: { y: [1, 2, 3] }, when: new Date(0) };
+const b = deepClone(a);
+b.nested.y.push(4);
+a.nested.y;           // → [1, 2, 3]   (untouched)
+
+const cyclic = { name: 'me' };
+cyclic.self = cyclic;
+const clone = deepClone(cyclic);
+clone.self === clone; // → true
+```
+
+## Hint
+
+Maintain a `WeakMap` from source → clone. Before recursing into an object, check the map and return the existing clone if you've seen it. Add the new clone to the map *before* you recurse into its children, otherwise cycles will infinite-loop.

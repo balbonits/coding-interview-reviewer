@@ -1,0 +1,8 @@
+{
+  "slug": "curry",
+  "title": "Implement curry",
+  "tags": ["closures", "higher-order", "javascript", "functional"],
+  "difficulty": "medium",
+  "estimatedMinutes": 20,
+  "concepts": ["closures", "recursion", "higher-order-functions", "arity"]
+}

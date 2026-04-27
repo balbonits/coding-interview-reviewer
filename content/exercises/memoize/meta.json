@@ -1,0 +1,8 @@
+{
+  "slug": "memoize",
+  "title": "Implement memoize",
+  "tags": ["closures", "javascript", "utilities", "functional"],
+  "difficulty": "medium",
+  "estimatedMinutes": 20,
+  "concepts": ["closures", "caching", "higher-order-functions"]
+}

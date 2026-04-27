@@ -1,0 +1,25 @@
+---
+title: "Flatten Array"
+---
+
+Implement `flatten(arr, depth = 1)` — like the built-in `Array.prototype.flat`, but you write it yourself. Flatten the input array up to the given depth.
+
+## Examples
+
+```js
+flatten([1, [2, [3, [4]]]])         // → [1, 2, [3, [4]]]   (default depth 1)
+flatten([1, [2, [3, [4]]]], 2)      // → [1, 2, 3, [4]]
+flatten([1, [2, [3, [4]]]], Infinity) // → [1, 2, 3, 4]
+flatten([1, [2], 3])                // → [1, 2, 3]
+```
+
+## Requirements
+
+- Default `depth` to `1` when not provided.
+- Support `Infinity` as a depth to fully flatten.
+- Do not mutate the input.
+- Don't use `Array.prototype.flat` or `Array.prototype.flatMap`.
+
+## Hint
+
+Iterate the array. For each element, if it's an array AND the remaining `depth > 0`, recurse with `depth - 1` and spread the result. Otherwise, push the element directly.

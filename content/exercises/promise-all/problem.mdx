@@ -1,0 +1,35 @@
+---
+title: "Implement Promise.all"
+---
+
+Write `promiseAll(items)` that mirrors the native `Promise.all`. Given an iterable of values (which may be promises, thenables, or plain values), return a single promise that resolves to an array of the resolved values **in the original order**.
+
+## Requirements
+
+- **Order preservation**: result `[i]` corresponds to input `[i]`, regardless of which promise settles first.
+- **First rejection wins**: if any input promise rejects, the returned promise rejects with that reason and ignores the rest.
+- **Plain values pass through**: `promiseAll([1, Promise.resolve(2), 3])` resolves to `[1, 2, 3]`.
+- **Empty input** resolves immediately to `[]`.
+- Don't call `Promise.all` (that would defeat the purpose). `Promise.resolve` is fine for normalizing values.
+
+## Examples
+
+```js
+await promiseAll([1, 2, 3]);
+// → [1, 2, 3]
+
+await promiseAll([Promise.resolve(1), Promise.resolve(2)]);
+// → [1, 2]
+
+await promiseAll([Promise.resolve(1), Promise.reject('boom')]).catch(e => e);
+// → 'boom'
+
+await promiseAll([]);
+// → []
+```
+
+## Hint
+
+Allocate a result array of `length === items.length`. Iterate the input with the index. For each item, `Promise.resolve(item).then(value => { results[i] = value; if (++settled === total) resolve(results); }, reject)`. The shared `reject` is what gives you "first rejection wins" — once a promise has rejected/resolved, further calls are no-ops.
+
+Watch the empty-input edge case: if `total === 0`, resolve with `[]` immediately — your counter check would never fire otherwise.

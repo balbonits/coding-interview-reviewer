@@ -1,0 +1,8 @@
+{
+  "slug": "flatten-array",
+  "title": "Flatten Array",
+  "tags": ["recursion", "array", "javascript"],
+  "difficulty": "easy",
+  "estimatedMinutes": 15,
+  "concepts": ["recursion", "iteration", "arrays"]
+}

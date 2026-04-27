@@ -1,0 +1,8 @@
+{
+  "slug": "async-pool",
+  "title": "Async Concurrency Pool",
+  "tags": ["async", "promises", "javascript", "rate-limiting"],
+  "difficulty": "hard",
+  "estimatedMinutes": 40,
+  "concepts": ["promises", "async-iteration", "concurrency", "queues"]
+}

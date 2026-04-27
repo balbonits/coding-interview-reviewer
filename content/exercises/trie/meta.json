@@ -1,0 +1,8 @@
+{
+  "slug": "trie",
+  "title": "Trie / Autocomplete",
+  "tags": ["data-structures", "string", "tree", "javascript"],
+  "difficulty": "hard",
+  "estimatedMinutes": 40,
+  "concepts": ["tries", "tree-traversal", "string-prefix", "dfs"]
+}

@@ -1,0 +1,8 @@
+{
+  "slug": "promise-all",
+  "title": "Implement Promise.all",
+  "tags": ["async", "promises", "javascript"],
+  "difficulty": "hard",
+  "estimatedMinutes": 35,
+  "concepts": ["promises", "async", "iteration", "error-handling"]
+}

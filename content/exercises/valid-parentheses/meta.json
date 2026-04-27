@@ -1,0 +1,8 @@
+{
+  "slug": "valid-parentheses",
+  "title": "Valid Parentheses",
+  "tags": ["stack", "string", "javascript"],
+  "difficulty": "easy",
+  "estimatedMinutes": 15,
+  "concepts": ["stacks", "iteration", "matching-pairs"]
+}

@@ -1,0 +1,8 @@
+{
+  "slug": "json-stringify",
+  "title": "Implement JSON.stringify",
+  "tags": ["recursion", "javascript", "serialization"],
+  "difficulty": "hard",
+  "estimatedMinutes": 45,
+  "concepts": ["recursion", "type-handling", "edge-cases", "serialization"]
+}

@@ -1,0 +1,29 @@
+---
+title: "useDebouncedValue Hook"
+---
+
+Build a `useDebouncedValue(value, delay)` custom hook. It returns a debounced version of `value` that only updates after `value` has been stable for `delay` milliseconds.
+
+This is the hook every search-as-you-type input reaches for: hold typing → no re-fetch; pause for `delay` ms → fetch fires once.
+
+## API
+
+```jsx
+function SearchBox({ query }) {
+  const debounced = useDebouncedValue(query, 300);
+  // `debounced` lags `query` until the user stops typing for 300ms
+  return <Results query={debounced} />;
+}
+```
+
+## Requirements
+
+- Return value defaults to the initial `value` on first render (no delay).
+- When `value` changes, schedule a timer to update the returned state after `delay` ms.
+- If `value` changes again before the timer fires, **cancel and reschedule** — the returned value should only catch up after `delay` ms of no changes.
+- If `delay` changes, restart the timer.
+- Clean up the timer on unmount.
+
+## Hint
+
+`useEffect` with `[value, delay]` dependencies. Inside, `setTimeout(() => setState(value), delay)` and return a cleanup that clears the timer. The cleanup runs both on unmount AND before each new effect — which is exactly the "cancel previous, reschedule" behavior you want.

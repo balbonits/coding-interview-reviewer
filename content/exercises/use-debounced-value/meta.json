@@ -1,0 +1,9 @@
+{
+  "slug": "use-debounced-value",
+  "title": "useDebouncedValue Hook",
+  "tags": ["react", "hooks", "javascript"],
+  "difficulty": "medium",
+  "estimatedMinutes": 25,
+  "concepts": ["custom-hooks", "useEffect", "useState", "cleanup", "timers"],
+  "template": "react"
+}

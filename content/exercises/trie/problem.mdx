@@ -1,0 +1,37 @@
+---
+title: "Trie / Autocomplete"
+---
+
+Implement a `Trie` (prefix tree) — the data structure that powers every autocomplete, spell-checker, and IP-routing table.
+
+## API
+
+```js
+const trie = new Trie();
+
+trie.insert('cat');
+trie.insert('car');
+trie.insert('care');
+
+trie.search('cat');       // → true   (exact word)
+trie.search('ca');        // → false  (prefix only, not inserted as a word)
+trie.startsWith('ca');    // → true
+trie.startsWith('dog');   // → false
+
+trie.suggest('ca');       // → ['cat', 'car', 'care']  (any order)
+trie.suggest('z');        // → []
+```
+
+## Requirements
+
+- `insert(word)` — add a word to the trie.
+- `search(word)` — return `true` if the exact word was inserted.
+- `startsWith(prefix)` — return `true` if any inserted word starts with `prefix`.
+- `suggest(prefix)` — return all inserted words that start with `prefix`. Order doesn't matter for the tests, but each match must appear exactly once even if `insert` was called twice.
+- All lowercase ASCII inputs is fine — no need to handle unicode normalization.
+
+## Hint
+
+Each node holds a `children` map (`char → Node`) and an `isEnd` boolean. `insert` walks/creates nodes one char at a time, marking `isEnd` on the last node. `search` walks the chars; if it falls off, return false; at the end, check `isEnd`. `startsWith` is the same walk but skips the `isEnd` check.
+
+For `suggest`, walk to the prefix node first, then DFS from there — every time you hit `isEnd`, push the path-so-far onto the result list.

@@ -1,0 +1,8 @@
+{
+  "slug": "event-emitter",
+  "title": "Event Emitter",
+  "tags": ["oop", "javascript", "patterns"],
+  "difficulty": "medium",
+  "estimatedMinutes": 25,
+  "concepts": ["pub-sub", "classes", "this-binding", "data-structures"]
+}

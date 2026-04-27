@@ -1,0 +1,42 @@
+---
+title: "Async Concurrency Pool"
+---
+
+Write `asyncPool(limit, tasks)` — given a list of *thunks* (functions that each return a Promise) and a concurrency `limit`, run the tasks so that **at most `limit` are in flight at any moment**. Return a single promise that resolves to the array of results in the original order.
+
+This is the primitive every batched API client, image preloader, and worker queue is built on.
+
+## API
+
+```js
+const tasks = urls.map((u) => () => fetch(u).then((r) => r.json()));
+const results = await asyncPool(3, tasks);
+// → in-order results array; never more than 3 concurrent fetches
+```
+
+## Requirements
+
+- **Concurrency cap**: at most `limit` tasks run simultaneously.
+- **Order preservation**: `results[i]` corresponds to `tasks[i]`, regardless of completion order.
+- **Lazy invocation**: `tasks[i]` must not be called until a slot opens. Calling all of them up front and just gating the await defeats the purpose.
+- **First rejection wins** (like `Promise.all`): the returned promise rejects with the first error; remaining tasks may continue, but their results are discarded.
+- **Edge cases**: empty `tasks` resolves to `[]`. `limit >= tasks.length` runs them all in parallel.
+
+## Examples
+
+```js
+const log = [];
+const make = (id, ms) => () => new Promise((r) =>
+  setTimeout(() => { log.push(id); r(id); }, ms)
+);
+
+await asyncPool(2, [make('a', 30), make('b', 10), make('c', 20), make('d', 5)]);
+// log might be ['b', 'a', 'd', 'c'] — only 2 in flight at a time
+// returned array is ['a', 'b', 'c', 'd'] (input order)
+```
+
+## Hint
+
+Maintain an index `next = 0`. Spawn `min(limit, tasks.length)` workers in parallel. Each worker is a recursive function: pull `i = next++`, run `tasks[i]()`, store the result at `results[i]`, then loop until `next >= tasks.length`. When all workers have exited, resolve with `results`.
+
+Alternative: track a `Set<Promise>` of in-flight tasks. Whenever the set's size hits `limit`, `await Promise.race(set)` to free a slot before scheduling the next task.

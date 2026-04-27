@@ -1,0 +1,27 @@
+---
+title: "Implement curry"
+---
+
+Write a `curry(fn)` that returns a function which can be called with fewer arguments than `fn` expects. Each partial call returns another function until enough arguments are accumulated, at which point the original `fn` is invoked.
+
+## Examples
+
+```js
+function sum3(a, b, c) { return a + b + c; }
+const c = curry(sum3);
+
+c(1)(2)(3);        // → 6
+c(1, 2)(3);        // → 6
+c(1)(2, 3);        // → 6
+c(1, 2, 3);        // → 6
+```
+
+## Requirements
+
+- Use `fn.length` to detect the arity (the number of declared parameters).
+- Allow any combination of partial-call shapes that eventually supplies enough arguments.
+- Return the result the moment enough arguments are collected — do not require trailing empty calls.
+
+## Hint
+
+Recursively return a new wrapper that closes over the arguments collected so far. Once `collected.length >= fn.length`, call `fn(...collected)`.

@@ -1,0 +1,8 @@
+{
+  "slug": "deep-clone",
+  "title": "Deep Clone",
+  "tags": ["recursion", "javascript", "data-structures"],
+  "difficulty": "medium",
+  "estimatedMinutes": 30,
+  "concepts": ["recursion", "object-traversal", "circular-references", "built-in-types"]
+}

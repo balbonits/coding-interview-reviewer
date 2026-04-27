@@ -1,0 +1,32 @@
+---
+title: "Event Emitter"
+---
+
+Implement a tiny `EventEmitter` class — the same pub/sub primitive that powers Node's `EventEmitter`, the DOM's `addEventListener`, and almost every framework's event bus.
+
+## API
+
+```js
+const ee = new EventEmitter();
+
+ee.on('msg', (text) => console.log(text));
+ee.emit('msg', 'hello');           // → logs 'hello'
+
+const off = ee.on('tick', cb);
+off();                             // → cb is no longer subscribed
+ee.off('tick', cb);                // → also unsubscribes (alternative API)
+
+ee.once('ready', () => {});        // → fires at most once, then auto-removes
+```
+
+## Requirements
+
+- `on(event, listener)` — subscribes; returns an unsubscribe function for convenience.
+- `off(event, listener)` — removes that exact listener; no-op if not subscribed.
+- `emit(event, ...args)` — calls every listener for `event` with the given args, in subscription order.
+- `once(event, listener)` — listener fires at most once; the wrapper must self-remove before the listener runs (so re-emitting from inside the listener doesn't recurse infinitely).
+- A listener removed *during* an `emit` should not be called for that emit.
+
+## Hint
+
+A `Map<string, Listener[]>` is the simplest backing store. For `once`, wrap the listener in a function that calls `off` first, then invokes the original. To avoid the "listener removed mid-emit" pitfall, snapshot the listener array (`[...listeners]`) before iterating.

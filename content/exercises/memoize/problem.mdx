@@ -1,0 +1,28 @@
+---
+title: "Implement memoize"
+---
+
+Write `memoize(fn, resolver?)` — return a wrapped function that caches results by argument(s). When called with the same arguments, the cached result is returned without re-running `fn`.
+
+## Examples
+
+```js
+let calls = 0;
+const slowAdd = (a, b) => { calls++; return a + b; };
+const memo = memoize(slowAdd);
+
+memo(1, 2);   // → 3,  calls === 1
+memo(1, 2);   // → 3,  calls === 1   (cached)
+memo(2, 3);   // → 5,  calls === 2
+```
+
+## Requirements
+
+- Default cache key: stringify the arguments (e.g. `JSON.stringify(args)`).
+- Optional `resolver(...args)` returns a custom cache key.
+- The wrapped function must preserve `this`.
+- The cache is per-call to `memoize`, not global.
+
+## Hint
+
+Close over a `Map`. On each call: compute the key (resolver or default), check `cache.has(key)`, and either return the cached value or run `fn` and store the result.

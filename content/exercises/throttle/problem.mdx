@@ -1,0 +1,26 @@
+---
+title: "Implement throttle"
+---
+
+Write a `throttle(fn, wait)` higher-order function. Unlike `debounce` (which fires *after* the user stops), `throttle` fires *at most once per `wait` window*: invoke the function on the leading edge, then ignore further calls until the window elapses.
+
+## Examples
+
+```js
+const log = throttle(console.log, 100);
+log('a');                              // -> 'a' (leading edge fires immediately)
+log('b'); log('c');                    // -> ignored (still inside the 100ms window)
+// 100ms later
+log('d');                              // -> 'd' (a new window starts)
+```
+
+## Requirements
+
+- Leading-edge invocation: the very first call inside an idle window runs synchronously.
+- Subsequent calls inside the same window are dropped (no trailing call required for this exercise).
+- The next window opens exactly `wait` ms after the last invocation.
+- Forward all arguments and the correct `this` binding.
+
+## Hint
+
+Track the timestamp (or a boolean) of the last successful invocation in a closure. When a new call comes in, compare `Date.now() - lastCall >= wait`.

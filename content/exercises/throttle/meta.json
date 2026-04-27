@@ -1,0 +1,8 @@
+{
+  "slug": "throttle",
+  "title": "Implement throttle",
+  "tags": ["closures", "timers", "javascript", "utilities"],
+  "difficulty": "medium",
+  "estimatedMinutes": 20,
+  "concepts": ["closures", "higher-order-functions", "rate-limiting"]
+}

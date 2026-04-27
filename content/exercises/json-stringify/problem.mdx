@@ -1,0 +1,48 @@
+---
+title: "Implement JSON.stringify"
+---
+
+Write `stringify(value)` that produces a JSON string equivalent to what the native `JSON.stringify(value)` would return — without calling the native one.
+
+This problem looks innocent until you list every edge case JSON.stringify actually handles. That's why interviewers love it.
+
+## Requirements
+
+| Input | Output |
+|---|---|
+| `null` | `'null'` |
+| `true` / `false` | `'true'` / `'false'` |
+| Number (finite) | the number, e.g. `'42'`, `'-3.14'` |
+| `NaN`, `Infinity`, `-Infinity` | `'null'` |
+| String | JSON-escaped, double-quoted: `'"hi"'`, `'"a\\nb"'` |
+| Array | `'[a,b,c]'` (recursively stringified) |
+| Plain object | `'{"k":v,...}'` (recursively stringified) |
+| `undefined` / function / symbol at the **top level** | return `undefined` (matches native) |
+| `undefined` / function / symbol **inside an array** | serialize as `'null'` |
+| `undefined` / function / symbol **inside an object** | omit the key entirely |
+| Object with `toJSON()` method | call it and stringify the result |
+
+You don't need to support: indentation, the `replacer` argument, dates, circular refs.
+
+## Examples
+
+```js
+stringify({ a: 1, b: [2, 'three', null] });
+// → '{"a":1,"b":[2,"three",null]}'
+
+stringify({ x: undefined, y: () => {}, z: 1 });
+// → '{"z":1}'
+
+stringify([1, undefined, () => {}, 'a']);
+// → '[1,null,null,"a"]'
+
+stringify(NaN);            // → 'null'
+stringify(undefined);      // → undefined
+stringify({ toJSON: () => 99 });  // → '99'
+```
+
+## Hint
+
+Recurse on type. The string-escape function only needs to handle: `\\`, `"`, `\n`, `\r`, `\t`. Inside arrays use the `'null'` substitute for unsupported values; inside objects filter the keys out before joining.
+
+Check `value && typeof value.toJSON === 'function'` *first* — `toJSON` short-circuits everything else.
