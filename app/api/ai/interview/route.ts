@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
 import { streamChat, type OllamaMessage } from "@/lib/ollama";
+import {
+  INTERVIEW_TRACKS,
+  type InterviewTrack,
+} from "@/lib/interviewSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,21 +13,9 @@ const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 4096);
 // Cheap heuristic: ~4 chars per token for English text.
 const CHARS_PER_TOKEN = 4;
 
-const SYSTEM_PROMPT = `You are a senior front-end engineer conducting a focused 15-minute JavaScript technical interview.
-
-Rules of engagement:
-- Ask ONE question at a time. Wait for the candidate's answer before moving on.
-- Vary the question style: mix conceptual ("how does X work?"), trade-off ("when would you reach for Y vs Z?"), debugging ("what's wrong with this snippet?"), and short coding questions.
-- After each answer, ask a follow-up that probes a weakness, extends the idea, or pushes to a deeper "why".
-- Keep your turns short. Don't lecture. Don't dump multi-paragraph explanations of correct answers — your job is to evaluate, not teach.
-- If the candidate is wrong or vague, gently push back ("walk me through that one more time" / "what would happen if...?") instead of immediately giving the answer.
-- If the candidate explicitly asks you to stop, give a brief 3-bullet summary of strengths/gaps/recommended-next-topic and end the session.
-- Topic surface area for this interview: closures, scope, this binding, prototypes & classes, async/await, promises, event loop, modules, ES2015+ features, common interview patterns (debounce, throttle, deep-clone), and basic React/TypeScript familiarity.
-
-Begin the interview by greeting briefly and asking your first question.`;
-
 type RequestBody = {
   messages: OllamaMessage[];
+  track?: InterviewTrack;
 };
 
 export async function POST(req: NextRequest) {
@@ -37,8 +29,11 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "Missing or invalid `messages` array");
   }
 
+  const preset = INTERVIEW_TRACKS[body.track ?? "javascript"]
+    ?? INTERVIEW_TRACKS.javascript;
+
   const fullMessages: OllamaMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: preset.systemPrompt },
     ...trimToContextBudget(body.messages, NUM_CTX),
   ];
 

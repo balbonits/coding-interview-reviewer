@@ -12,17 +12,26 @@ import Markdown from "react-markdown";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { InlineRename } from "@/components/ui/inline-rename";
 import { Textarea } from "@/components/ui/textarea";
 import {
   getSession,
   updateSession,
+  renameSession,
   endSession,
+  sessionDisplayTitle,
+  trackLabel,
+  INTERVIEW_TRACKS,
   type InterviewSession,
   type InterviewMessage,
 } from "@/lib/interviewSessions";
 
-const KICKOFF_PROMPT =
-  "Begin the interview now. Greet me briefly and ask your first JavaScript question.";
+function kickoffFor(session: InterviewSession): string {
+  return (
+    INTERVIEW_TRACKS[session.track]?.kickoffPrompt ??
+    INTERVIEW_TRACKS.javascript.kickoffPrompt
+  );
+}
 
 export default function InterviewSessionPage({
   params,
@@ -36,6 +45,7 @@ export default function InterviewSessionPage({
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
 
@@ -48,7 +58,7 @@ export default function InterviewSessionPage({
       setSession(s);
       if (!kickedOffRef.current && s.messages.length === 0 && !s.endedAt) {
         kickedOffRef.current = true;
-        void send([{ role: "user", content: KICKOFF_PROMPT }], s);
+        void send([{ role: "user", content: kickoffFor(s) }], s);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,7 +95,10 @@ export default function InterviewSessionPage({
       const res = await fetch("/api/ai/interview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messagesAfterUser }),
+        body: JSON.stringify({
+          messages: messagesAfterUser,
+          track: baseSession.track,
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -173,36 +186,73 @@ export default function InterviewSessionPage({
     setSession({ ...session, endedAt: Date.now() });
   }
 
+  async function commitTitle(next: string) {
+    if (!session) return;
+    setIsEditingTitle(false);
+    const updated = await renameSession(session.id, next);
+    if (updated) setSession(updated);
+  }
+
   if (!session) {
     return <p className="text-muted-foreground">Loading session…</p>;
   }
 
+  const kickoff = kickoffFor(session);
   const visibleMessages = session.messages.filter(
-    (m) => m.role !== "system" && m.content !== KICKOFF_PROMPT,
+    (m) => m.role !== "system" && m.content !== kickoff,
   );
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-12rem)]">
-      <header className="flex items-center justify-between">
+      <header className="space-y-2">
         <Link
           href="/interview"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           ← All sessions
         </Link>
-        <div className="flex items-center gap-3 text-sm">
-          {session.endedAt ? (
-            <span className="text-muted-foreground">Session ended</span>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => { void handleEnd(); }}
-              disabled={isStreaming}
-            >
-              End session
-            </Button>
-          )}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {isEditingTitle ? (
+              <InlineRename
+                value={session.title ?? ""}
+                placeholder={`${trackLabel(session.track)} interview`}
+                onSubmit={commitTitle}
+                onCancel={() => setIsEditingTitle(false)}
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="truncate text-lg font-semibold">
+                  {sessionDisplayTitle(session)}
+                </h1>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditingTitle(true)}
+                >
+                  Rename
+                </Button>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              {trackLabel(session.track)}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-3 text-sm">
+            {session.endedAt ? (
+              <span className="text-muted-foreground">Session ended</span>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { void handleEnd(); }}
+                disabled={isStreaming}
+              >
+                End session
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
