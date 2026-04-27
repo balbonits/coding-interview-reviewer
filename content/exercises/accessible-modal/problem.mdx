@@ -1,0 +1,47 @@
+---
+title: "Accessible Modal Dialog"
+---
+
+Build a `Modal` component with the right ARIA wiring and the two close interactions every modal needs. This is the smallest version of the dialog pattern that screen readers and keyboard users actually rely on.
+
+## Props
+
+```ts
+type Props = {
+  open: boolean;
+  title: string;
+  description?: string;
+  onClose: () => void;
+  children?: React.ReactNode;
+};
+```
+
+## Requirements
+
+- When `open` is `false`, render nothing (`null`).
+- When `open` is `true`:
+  - **Backdrop**: an outer `<div>` with `data-testid="modal-backdrop"`. Clicking the backdrop calls `onClose`.
+  - **Dialog**: an inner `<div>` with `role="dialog"` and `aria-modal="true"`.
+  - **Title**: an `<h2>` with `id="modal-title"`. The dialog has `aria-labelledby="modal-title"`.
+  - **Description** (optional): a `<p>` with `id="modal-desc"`. When `description` is provided, the dialog has `aria-describedby="modal-desc"`. When omitted, the dialog must NOT have `aria-describedby`.
+  - **Close button**: a `<button>` with `aria-label="Close dialog"` that calls `onClose`.
+  - **Children** render inside the dialog.
+  - **Click inside the dialog must NOT close it** — only the backdrop does.
+- **ESC key** anywhere on the document closes the modal (only when `open`). Remove the listener on close/unmount.
+
+## Examples
+
+```jsx
+<Modal
+  open={isOpen}
+  title="Delete file"
+  description="This action cannot be undone."
+  onClose={() => setIsOpen(false)}
+>
+  <button onClick={confirm}>Delete</button>
+</Modal>
+```
+
+## Hint
+
+For the ESC handler, `useEffect` keyed on `[open, onClose]`: attach `keydown` to `window` when open, return a cleanup that removes it. Inside the listener, check `e.key === 'Escape'`. For the backdrop click vs dialog click: stop propagation on the dialog's click, OR check `e.target === e.currentTarget` on the backdrop's handler.

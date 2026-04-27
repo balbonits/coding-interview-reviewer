@@ -1,0 +1,30 @@
+---
+title: "Tag Cloud"
+---
+
+Build a `TagCloud` component that renders a list of tags where each tag's font size scales with its weight — the "tag cloud" pattern from blogs and design tools.
+
+## Props
+
+```ts
+type Tag = { label: string; weight: number };  // weight is 1..10
+type Props = { tags: Tag[] };
+```
+
+## Requirements
+
+- Render a `<ul>` with one `<li>` per tag.
+- Each tag's label is wrapped in an `<a href="#">` so it's keyboard-focusable.
+- Use this exact size formula on the `<a>` element: `fontSize = (0.75 + weight * 0.15) + 'em'`.
+  - weight 1 → `0.9em`
+  - weight 10 → `2.25em`
+- An empty list should render an empty `<ul>` (no error).
+- The label text appears verbatim — don't transform it.
+
+## Why this formula
+
+The weights map to a 2.5× size ratio between the smallest and largest tag, which is the readable range for tag clouds. Most teams have a similar formula somewhere in a `lib/typography.ts` file.
+
+## Hint
+
+This is straightforward render-from-props. Wrap the formula in a small helper if it makes the JSX cleaner. Inline `style={{ fontSize }}` is the simplest path; the tests assert on `el.style.fontSize`.

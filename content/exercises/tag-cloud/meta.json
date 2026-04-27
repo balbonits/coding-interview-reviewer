@@ -1,0 +1,9 @@
+{
+  "slug": "tag-cloud",
+  "title": "Tag Cloud",
+  "tags": ["css", "react", "html", "ui"],
+  "difficulty": "easy",
+  "estimatedMinutes": 20,
+  "concepts": ["inline-styles", "data-driven-styling", "semantic-html"],
+  "template": "react"
+}

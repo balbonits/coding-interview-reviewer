@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { InlineRename } from "@/components/ui/inline-rename";
+import { OptionCard } from "@/components/ui/option-card";
 import { StatusPill } from "@/components/ui/status-pill";
 import {
   listSessions,
@@ -89,23 +90,14 @@ export default function InterviewLandingPage() {
             const preset = INTERVIEW_TRACKS[id];
             const isStarting = starting === id;
             return (
-              <button
+              <OptionCard
                 key={id}
-                type="button"
                 onClick={() => { void startNew(id); }}
                 disabled={starting !== null}
-                className="text-left rounded-lg border border-border bg-card p-4 transition-colors hover:border-foreground/40 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="font-semibold">{preset.label}</div>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {preset.description}
-                </p>
-                {isStarting && (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Starting…
-                  </p>
-                )}
-              </button>
+                title={preset.label}
+                description={preset.description}
+                footer={isStarting ? "Starting…" : null}
+              />
             );
           })}
         </div>

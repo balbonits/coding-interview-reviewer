@@ -1,0 +1,9 @@
+{
+  "slug": "accessible-modal",
+  "title": "Accessible Modal Dialog",
+  "tags": ["html", "a11y", "react", "ux"],
+  "difficulty": "medium",
+  "estimatedMinutes": 25,
+  "concepts": ["aria", "semantic-html", "keyboard-handling", "focus"],
+  "template": "react"
+}
