@@ -24,6 +24,7 @@ export const metadata: Metadata = {
 };
 
 const navLinks = [
+  { href: "/courses", label: "Courses" },
   { href: "/notes", label: "Notes" },
   { href: "/exercises", label: "Exercises" },
   { href: "/quiz", label: "Quiz" },

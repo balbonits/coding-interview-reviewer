@@ -1,0 +1,48 @@
+---
+title: "Microservices & Microfrontends"
+description: "Service / frontend decomposition, contracts, deployment independence, and when these patterns are worth the cost."
+level: "advanced"
+estimatedHours: 5
+tags: ["microservices", "microfrontend", "architecture", "system-design", "interviews"]
+sections:
+  - title: "Concepts"
+    steps:
+      - kind: "note"
+        slug: "microservices-microfrontend"
+        note: "Decomposition strategies, contracts, deployment, when NOT to use them."
+  - title: "MFE in practice"
+    steps:
+      - kind: "exercise"
+        slug: "mfe-registry"
+        note: "Implement a tiny module-federation-style registry with version pinning."
+      - kind: "quiz"
+        topic: "Microfrontend architecture: Module Federation, runtime composition, build-time composition, version pinning, shared dependencies"
+        count: 6
+        title: "Microfrontend quiz"
+  - title: "Service-side concerns"
+    steps:
+      - kind: "quiz"
+        topic: "Microservice patterns: API gateway, service mesh, circuit breakers, saga pattern, event-driven communication"
+        count: 6
+        title: "Microservices quiz"
+      - kind: "quiz"
+        topic: "Distributed systems trade-offs: latency, partial failure, eventual consistency, idempotency"
+        count: 5
+        title: "Distributed systems quiz"
+  - title: "When NOT to do this"
+    steps:
+      - kind: "quiz"
+        topic: "When microservices and microfrontends are the wrong choice: monolith-first thinking, operational overhead, organizational coupling"
+        count: 5
+        title: "Anti-patterns quiz"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "system-design"
+        title: "Mock front-end system design"
+        note: "Walk through an MFE design end-to-end."
+---
+
+The decomposition track. Both microservices and microfrontends are advanced architectural patterns interviewers ask about — knowing when *not* to use them is half the answer.
+
+The MFE registry exercise gives you concrete experience with version pinning and runtime composition before you talk through it in an interview.

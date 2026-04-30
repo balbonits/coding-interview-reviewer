@@ -1,0 +1,62 @@
+---
+title: "Coding Standards & Conventions"
+description: "The naming, structuring, accessibility, and review-time judgments that separate junior code from senior code."
+level: "intermediate"
+estimatedHours: 4
+tags: ["coding-standards", "conventions", "code-quality", "interviews"]
+sections:
+  - title: "Modern HTML & accessibility"
+    steps:
+      - kind: "note"
+        slug: "modern-html"
+        note: "Semantics, ARIA, landmarks, focus management."
+      - kind: "note"
+        slug: "ux-ui"
+        note: "Practical UX/UI principles for engineers."
+      - kind: "exercise"
+        slug: "a11y-refactor"
+        note: "Identify and fix common a11y mistakes."
+      - kind: "exercise"
+        slug: "accessible-modal"
+        note: "Build a modal that passes accessibility checks."
+  - title: "CSS conventions"
+    steps:
+      - kind: "note"
+        slug: "modern-css"
+        note: "Cascade, specificity, modern features (clamp, has, container queries)."
+      - kind: "exercise"
+        slug: "tag-cloud"
+        note: "Layout + accessible interactive list."
+      - kind: "quiz"
+        topic: "CSS conventions: BEM, utility-first, cascade layers, specificity, when to use !important (almost never)"
+        count: 5
+        title: "CSS conventions quiz"
+  - title: "JS / TS code quality"
+    steps:
+      - kind: "quiz"
+        topic: "JavaScript naming conventions, immutability, pure functions, when to extract a helper, when NOT to"
+        count: 6
+        title: "JS code quality quiz"
+      - kind: "quiz"
+        topic: "TypeScript style: when to use any vs unknown, narrow vs wide types, readonly, branded types"
+        count: 5
+        title: "TS style quiz"
+  - title: "REST APIs"
+    steps:
+      - kind: "note"
+        slug: "rest-apis"
+        note: "Resource modeling, status codes, idempotency."
+      - kind: "exercise"
+        slug: "resilient-fetch"
+        note: "Retry, timeout, abort — the production-quality bits."
+  - title: "SEO & metadata hygiene"
+    steps:
+      - kind: "note"
+        slug: "seo"
+      - kind: "exercise"
+        slug: "seo-meta-tags"
+---
+
+The conventions track. This one's about the judgment calls — what makes a senior code review feel different from a junior one.
+
+It's broader by design: HTML accessibility, CSS, JS / TS style, REST conventions, and SEO/metadata. These show up in pair-programming rounds and code-review questions even when the rest of the interview is leetcode.

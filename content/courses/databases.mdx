@@ -1,0 +1,54 @@
+---
+title: "Databases (SQL & NoSQL)"
+description: "When to pick which database, indexing, ACID, scaling moves, and the comparison questions every backend interview hits."
+level: "intermediate"
+estimatedHours: 4
+tags: ["database", "sql", "nosql", "system-design", "interviews"]
+prerequisites: []
+sections:
+  - title: "The big picture"
+    steps:
+      - kind: "note"
+        slug: "databases-sql-vs-nosql"
+        note: "CAP, ACID, when to pick each, scaling moves."
+  - title: "Relational deep-cut"
+    steps:
+      - kind: "note"
+        slug: "postgres-cheat-sheet"
+        note: "Reference for the SQL details."
+      - kind: "quiz"
+        topic: "Normalization, foreign keys, joins, transactions, indexes — relational fundamentals"
+        count: 6
+        title: "Relational quiz"
+  - title: "Document deep-cut"
+    steps:
+      - kind: "note"
+        slug: "mongodb"
+        note: "Document modeling and aggregation."
+      - kind: "exercise"
+        slug: "mongo-query-matcher"
+      - kind: "quiz"
+        topic: "Document database trade-offs: embedding vs referencing, schema flexibility, sharding"
+        count: 6
+        title: "Document quiz"
+  - title: "Scaling & reliability"
+    steps:
+      - kind: "quiz"
+        topic: "CAP theorem, eventual vs strong consistency, read replicas, sharding, caching layers"
+        count: 6
+        title: "Scaling & CAP quiz"
+      - kind: "quiz"
+        topic: "Indexing strategies across SQL and NoSQL: B-tree, hash, composite indexes, query planner basics"
+        count: 5
+        title: "Indexing across paradigms quiz"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "system-design"
+        title: "Mock system design interview"
+        note: "Talk through a data-layer choice end-to-end."
+---
+
+A higher-altitude track that compares SQL and NoSQL head-to-head. Pairs notes from both worlds with mixed quizzes that force the comparison.
+
+Useful before any system design round — interviewers love the "why Mongo vs Postgres for X" question, and the right answer is always "depends on the access pattern."

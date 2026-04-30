@@ -1,0 +1,47 @@
+---
+title: "State Management (Redux, Zustand, Context)"
+description: "When to reach for context, when for Zustand, when for Redux Toolkit — and the trade-offs interviewers want you to articulate."
+level: "intermediate"
+estimatedHours: 4
+tags: ["react", "state-management", "redux", "zustand", "interviews"]
+sections:
+  - title: "Side-by-side reference"
+    steps:
+      - kind: "note"
+        slug: "redux-zustand-cheat-sheet"
+        note: "API surface for both libraries plus a decision flow."
+  - title: "Local state & context"
+    steps:
+      - kind: "note"
+        slug: "react-hooks"
+        note: "Refresher on useState, useReducer, and useContext."
+      - kind: "quiz"
+        topic: "When to lift state up, when to use context, performance pitfalls of context"
+        count: 5
+        title: "Local & context quiz"
+  - title: "External stores"
+    steps:
+      - kind: "quiz"
+        topic: "Redux Toolkit: createSlice, Immer, selectors, RTK Query, when reducers must be pure"
+        count: 6
+        title: "Redux Toolkit quiz"
+      - kind: "quiz"
+        topic: "Zustand: create, selectors, useShallow, middleware (persist, devtools), no-Provider pattern"
+        count: 6
+        title: "Zustand quiz"
+  - title: "Decision making"
+    steps:
+      - kind: "quiz"
+        topic: "State management decision flow: useState vs lifted state vs context vs Zustand vs Redux vs server-state libraries (React Query / SWR)"
+        count: 6
+        title: "Decision flow quiz"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "react"
+        title: "Mock React + state interview"
+---
+
+State management is mostly about *not* over-engineering. This track drills the decision tree: useState → lifted → context → external store → server-state cache.
+
+The cheat sheet covers both Redux and Zustand symmetrically — interviewers often ask for both even if you only use one in production.
