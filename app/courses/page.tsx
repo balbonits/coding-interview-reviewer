@@ -1,8 +1,10 @@
 import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { listCourses } from "@/lib/courses-server";
 import { countSteps } from "@/lib/courses";
 import { getDb } from "@/lib/mongodb";
 import type { CourseProgress } from "@/lib/courses";
+import type { AiCourse } from "@/lib/aiCourses";
 import {
   Card,
   CardContent,
@@ -11,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { GenerateCourseForm } from "@/components/GenerateCourseForm";
 
 export const metadata = {
   title: "Courses · Coding Interview Reviewer",
@@ -27,6 +30,9 @@ const LEVEL_COLOR: Record<string, string> = {
 interface ProgressDoc extends CourseProgress {
   _id: string;
 }
+interface AiCourseDoc extends AiCourse {
+  _id: string;
+}
 
 async function fetchAllProgress(): Promise<CourseProgress[]> {
   try {
@@ -41,10 +47,25 @@ async function fetchAllProgress(): Promise<CourseProgress[]> {
   }
 }
 
+async function fetchAiCourses(): Promise<AiCourse[]> {
+  try {
+    const db = await getDb();
+    const docs = await db
+      .collection<AiCourseDoc>("ai_courses")
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+    return docs.map(({ _id, ...rest }) => rest);
+  } catch {
+    return [];
+  }
+}
+
 export default async function CoursesPage() {
-  const [courses, allProgress] = await Promise.all([
+  const [courses, allProgress, aiCourses] = await Promise.all([
     listCourses(),
     fetchAllProgress(),
+    fetchAiCourses(),
   ]);
 
   // Group progress by course
@@ -83,6 +104,10 @@ export default async function CoursesPage() {
         </p>
       </header>
 
+      <section>
+        <GenerateCourseForm />
+      </section>
+
       {resumeCourse && (
         <section className="rounded-xl border border-primary/30 bg-primary/5 p-5">
           <p className="text-xs font-medium uppercase tracking-wider text-primary">
@@ -97,6 +122,85 @@ export default async function CoursesPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {byCourse.get(resumeCourse.slug) ?? 0} of {countSteps(resumeCourse)} steps complete
           </p>
+        </section>
+      )}
+
+      {aiCourses.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-xl font-semibold">
+              <Sparkles className="size-4 text-primary" />
+              AI-generated for you
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {aiCourses.length} saved
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {aiCourses.map((course) => {
+              const total = course.sections.reduce(
+                (sum, s) => sum + s.steps.length,
+                0,
+              );
+              const slug = `ai:${course.id}`;
+              const done = byCourse.get(slug) ?? 0;
+              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+              return (
+                <Link
+                  key={course.id}
+                  href={`/courses/ai/${course.id}`}
+                  className="group"
+                >
+                  <Card className="flex h-full flex-col transition-colors group-hover:border-foreground/40">
+                    <CardHeader className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">
+                          <Sparkles className="size-3" />
+                          AI
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-medium capitalize ${LEVEL_COLOR[course.level] ?? ""}`}
+                        >
+                          {course.level}
+                        </span>
+                        <span className="text-muted-foreground">
+                          ~{course.estimatedHours}h · {total} steps
+                        </span>
+                      </div>
+                      <CardTitle className="leading-snug line-clamp-2">
+                        {course.title}
+                      </CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {course.description}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="mt-auto space-y-2 pt-0">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className={`h-full transition-all ${
+                            pct === 100
+                              ? "bg-emerald-500"
+                              : pct > 0
+                                ? "bg-primary"
+                                : "bg-muted"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span className="line-clamp-1">
+                          From: <em>&ldquo;{course.prompt}&rdquo;</em>
+                        </span>
+                        <span className="ml-2 shrink-0">
+                          {pct === 100 ? "✓ done" : `${done}/${total}`}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
         </section>
       )}
 
