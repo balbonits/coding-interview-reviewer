@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   SandpackProvider,
   SandpackLayout,
@@ -89,8 +89,33 @@ function AiPanel({ problem }: { problem: string }) {
   const [response, setResponse] = useState("");
   const [loading, setLoading] = useState<AiAction | null>(null);
   const [open, setOpen] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight request when the component unmounts (e.g. user
+  // navigates away mid-stream).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
+
+  function close() {
+    // Closing means "I don't want this answer" — abort, clear loading state,
+    // wipe the buffered response so reopening doesn't flash stale text.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setOpen(false);
+    setLoading(null);
+    setResponse("");
+  }
 
   async function ask(action: AiAction) {
+    // Cancel any previous in-flight request before starting a new one.
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     const activeCode = sandpack.files[sandpack.activeFile]?.code ?? "";
     setLoading(action);
     setOpen(true);
@@ -101,11 +126,14 @@ function AiPanel({ problem }: { problem: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, code: activeCode, problem }),
+        signal: controller.signal,
       });
 
       if (!res.ok || !res.body) {
         const err = await res.text().catch(() => "");
-        setResponse(`Error: ${err || res.statusText}`);
+        if (!controller.signal.aborted) {
+          setResponse(`Error: ${err || res.statusText}`);
+        }
         return;
       }
 
@@ -114,6 +142,10 @@ function AiPanel({ problem }: { problem: string }) {
       let buf = "";
 
       while (true) {
+        if (controller.signal.aborted) {
+          await reader.cancel().catch(() => {});
+          return;
+        }
         const { done, value } = await reader.read();
         if (done) break;
         buf += decoder.decode(value, { stream: true });
@@ -124,16 +156,28 @@ function AiPanel({ problem }: { problem: string }) {
           try {
             const chunk = JSON.parse(line);
             const token: string = chunk?.message?.content ?? "";
-            if (token) setResponse((prev) => prev + token);
+            if (token && !controller.signal.aborted) {
+              setResponse((prev) => prev + token);
+            }
           } catch {
             // skip malformed lines
           }
         }
       }
     } catch (e) {
-      setResponse(`Failed to reach Ollama: ${e instanceof Error ? e.message : String(e)}`);
+      // Aborted requests are expected when the user closes the panel — don't
+      // surface them as errors.
+      if (controller.signal.aborted) return;
+      setResponse(
+        `Failed to reach Ollama: ${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
-      setLoading(null);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      // Only clear loading if this request is still the active one. (If the
+      // user already started another action, that action owns `loading`.)
+      setLoading((prev) => (prev === action ? null : prev));
     }
   }
 
@@ -158,7 +202,7 @@ function AiPanel({ problem }: { problem: string }) {
           <button
             type="button"
             aria-label="Close AI response"
-            onClick={() => setOpen(false)}
+            onClick={close}
             className="absolute right-3 top-3 text-xs text-muted-foreground hover:text-foreground"
           >
             ✕
