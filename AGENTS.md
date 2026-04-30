@@ -67,7 +67,30 @@ If missing:
 brew tap mongodb/brew && brew install mongodb-community
 ```
 
-## 5. Start the app
+## 5. Optional — SearXNG for on-demand web search
+
+The floating study assistant can call a local SearXNG instance when you ask it to search, verify, or cite sources. SearXNG is a free, open-source metasearch aggregator that runs in Docker. **Skip this step if you don't want web search** — the rest of the app works fine without it.
+
+```bash
+# Install Docker Desktop first (if you don't have it):
+# https://www.docker.com/products/docker-desktop/
+
+# Start SearXNG with our pre-baked config (mounts ./searxng/settings.yml):
+docker run -d --name searxng -p 8888:8080 \
+  -v "$(pwd)/searxng:/etc/searxng" \
+  searxng/searxng:latest
+
+# Health check:
+curl -sf http://localhost:8888/healthz && echo "ok"
+
+# Stop / start later:
+docker stop searxng
+docker start searxng
+```
+
+If SearXNG isn't running, the assistant gracefully falls back to "answering from training data only" with an inline notice. No errors, no broken UI.
+
+## 6. Start the app
 ```bash
 npm run dev:local
 ```
@@ -210,6 +233,22 @@ A universal entry point. Sends the user to `/quiz` with URL params that auto-tri
 ### Playwright
 
 `@playwright/test` is installed but **not yet wired into anything**. Future plan: a `tutorial` page that uses Playwright in headless mode to capture screenshots of the app in known states for documentation. No E2E tests yet — don't write any unless explicitly asked.
+
+### Web search (SearXNG, on-demand)
+
+The floating study assistant (`/api/ai/chat`) can call out to a local SearXNG container for live web results. Triggering is **intent-driven**: the route runs a regex over the user's last message and only attaches the `web_search` tool when the user explicitly asks (search, look up, verify, cite, "latest X", "as of 2026", etc.).
+
+When triggered:
+1. Route checks `isSearchAvailable()` — quick health probe at `${SEARXNG_URL}/healthz`.
+2. If reachable → attach the `web_search` tool, call `chatWithTools()` non-streamed. The model emits tool calls; we hit SearXNG's JSON API; results are fed back; model produces a final answer with markdown source links. Status messages (`Searching the web for: "X"…`) are streamed to the client as italic content chunks so the user sees progress.
+3. If unreachable → existing streaming path runs as normal, with a one-line notice prepended: *"Web search isn't running locally — answering from training data only."*
+
+The interview chatbot (`/api/ai/interview`) intentionally does **not** have web search wired in — actual interviewers don't browse mid-question, and giving the LLM tools there would break roleplay.
+
+**Env:**
+- `SEARXNG_URL` — default `http://localhost:8888`. Override if you run SearXNG on a different port.
+
+**Trigger phrases (tuned in `app/api/ai/chat/route.ts`):** "search online / web", "look it/this up", "verify", "fact-check", "validate your answer", "cite sources", "provide a reference", "where can I read more", "latest / current / recent <X>", "as of 2026", "is that still accurate", "MDN says". Add more by extending `SEARCH_INTENT_PATTERNS`.
 
 ## What's shipped
 

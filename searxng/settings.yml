@@ -1,0 +1,22 @@
+# SearXNG settings for local-only use by this project.
+# Enables JSON output so our Next.js code can call SearXNG as a search backend.
+# Mount this directory at /etc/searxng inside the container.
+
+use_default_settings: true
+
+general:
+  instance_name: "Coding Interview Reviewer · Local Search"
+
+server:
+  # Local-only secret. Don't expose this instance to the internet.
+  secret_key: "local-dev-only-not-a-real-secret"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"

@@ -1,5 +1,15 @@
 import { NextRequest } from "next/server";
-import { streamChat, type OllamaMessage } from "@/lib/ollama";
+import {
+  chatWithTools,
+  streamChat,
+  type OllamaMessage,
+  type OllamaTool,
+} from "@/lib/ollama";
+import {
+  formatResultsForModel,
+  isSearchAvailable,
+  webSearch,
+} from "@/lib/websearch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,14 +18,69 @@ const MODEL = process.env.OLLAMA_INTERVIEW_MODEL ?? "qwen2.5:14b";
 const NUM_CTX = Number(process.env.OLLAMA_NUM_CTX ?? 4096);
 const CHARS_PER_TOKEN = 4;
 
+const WEB_SEARCH_TOOL: OllamaTool = {
+  type: "function",
+  function: {
+    name: "web_search",
+    description:
+      "Search the web for current information, references, citations, or to verify a claim. Returns up to 5 results with titles, URLs, and snippets. Use when the user asks to search, look something up, verify, fact-check, find references, or asks about recent / current / latest information.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "The search query. Be specific. Prefer 4–10 words covering the precise question.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+};
+
+// Patterns that indicate the user explicitly wants the web. If matched, we
+// enable the web_search tool and instruct the model to use it.
+const SEARCH_INTENT_PATTERNS: RegExp[] = [
+  /\bsearch\s+(online|web|the\s+(web|net|internet))\b/i,
+  /\blook\s+(it|this|that)\s+up\b/i,
+  /\blook\s+(online|on\s+the\s+web|things\s+up)\b/i,
+  /\bgoogle\s+(it|this|that)\b/i,
+  /\b(verify|fact[\s-]?check)\b/i,
+  /\bvalidate\s+(your|this|that)?\s*(answer|claim|response|reply)\b/i,
+  /\bcite\s+(your\s+)?(sources?|references?)\b/i,
+  /\bprovide\s+(a\s+)?(source|citation|reference|link)\b/i,
+  /\bgive\s+me\s+(a\s+)?(source|citation|reference|link)\b/i,
+  /\bwhere\s+can\s+i\s+(read|find|learn)\s+more\b/i,
+  /\b(latest|current|recent)\s+(version|release|news|update|change|api|spec)\b/i,
+  /\bas\s+of\s+(20\d{2}|today|now)\b/i,
+  /\bis\s+(this|that|it)\s+still\s+(true|valid|accurate|correct|current)\b/i,
+  /\b(mdn|w3c|whatwg|tc39)\s+(say|says|reference|docs?)\b/i,
+];
+
+function detectSearchIntent(text: string): boolean {
+  return SEARCH_INTENT_PATTERNS.some((p) => p.test(text));
+}
+
 function buildSystemPrompt(
   pageTitle: string,
   pageDescription: string,
   pathname: string,
+  toolsEnabled: boolean,
+  intentExplicit: boolean,
 ): string {
   const location = pageTitle
     ? `The user is currently on: **${pageTitle}**${pageDescription ? ` — ${pageDescription}` : ""}.`
     : `The user is browsing the app (path: ${pathname || "/"}).`;
+
+  const toolsClause = toolsEnabled
+    ? `
+
+You have access to a \`web_search\` tool that returns live web results. ${
+        intentExplicit
+          ? "The user is explicitly asking you to search, verify, cite, or look something up. You MUST call web_search."
+          : "Call it when you need current information, citations, or to verify a claim."
+      } After receiving results, write your answer with markdown links to the sources you actually used. End with a "Sources:" section listing each cited link.`
+    : "";
 
   return `You are a concise study assistant embedded in a front-end interview prep app. You help a job-seeking engineer study JavaScript, TypeScript, React, HTML, CSS, accessibility, performance, and front-end architecture.
 
@@ -27,7 +92,7 @@ Guidelines:
 - Use code examples when they clarify things.
 - When a visual would clarify the explanation (architecture, sequence-of-events, data flow, lifecycle, data model), draw a diagram in a fenced \`\`\`mermaid block. Mermaid renders inline as an SVG. Prefer flowchart, sequenceDiagram, erDiagram, classDiagram, or stateDiagram. Keep diagrams small (≤ 10 nodes).
 - If asked to quiz or practice, do so with one question at a time.
-- Do NOT roleplay as an interviewer — there is a separate mock interviewer in the app for that.`;
+- Do NOT roleplay as an interviewer — there is a separate mock interviewer in the app for that.${toolsClause}`;
 }
 
 type RequestBody = {
@@ -48,17 +113,35 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "Missing or invalid `messages` array");
   }
 
+  const trimmed = trimToContextBudget(body.messages, NUM_CTX);
+  const lastUser = [...trimmed].reverse().find((m) => m.role === "user");
+  const intentExplicit = lastUser
+    ? detectSearchIntent(lastUser.content)
+    : false;
+
+  // Tools are only attached when the user explicitly asks. This keeps the
+  // streaming path fast for the 95% of questions that don't need search.
+  const wantTools = intentExplicit;
+  const searchAvailable = wantTools ? await isSearchAvailable() : false;
+
   const systemPrompt = buildSystemPrompt(
     body.pageTitle ?? "",
     body.pageDescription ?? "",
     body.pathname ?? "",
+    searchAvailable,
+    intentExplicit,
   );
 
   const fullMessages: OllamaMessage[] = [
     { role: "system", content: systemPrompt },
-    ...trimToContextBudget(body.messages, NUM_CTX),
+    ...trimmed,
   ];
 
+  if (wantTools && searchAvailable) {
+    return streamToolEnabledResponse(fullMessages);
+  }
+
+  // No tools — original streaming path.
   try {
     const stream = await streamChat({
       model: MODEL,
@@ -66,17 +149,106 @@ export async function POST(req: NextRequest) {
       numCtx: NUM_CTX,
       keepAlive: "2m",
     });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "application/x-ndjson; charset=utf-8",
-        "Cache-Control": "no-store",
-        "X-Accel-Buffering": "no",
-      },
-    });
+
+    // If user wanted search but SearXNG was down, prepend a notice chunk.
+    if (wantTools && !searchAvailable) {
+      const reader = stream.getReader();
+      const encoder = new TextEncoder();
+      const notice = JSON.stringify({
+        message: {
+          content:
+            "_(Web search isn't running locally — answering from training data only. To enable, start SearXNG: see AGENTS.md.)_\n\n",
+        },
+      });
+      const wrapped = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          controller.enqueue(encoder.encode(notice + "\n"));
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        },
+      });
+      return new Response(wrapped, {
+        headers: ndjsonHeaders(),
+      });
+    }
+
+    return new Response(stream, { headers: ndjsonHeaders() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return jsonError(502, `Ollama upstream error: ${msg}`);
   }
+}
+
+/**
+ * Run the tool-calling loop and stream status updates + the final answer to
+ * the client as NDJSON chunks. The client appends each chunk's content to
+ * the running assistant message, so the user sees: status → status → answer.
+ */
+function streamToolEnabledResponse(
+  messages: OllamaMessage[],
+): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const enqueue = (content: string) => {
+        controller.enqueue(
+          encoder.encode(JSON.stringify({ message: { content } }) + "\n"),
+        );
+      };
+
+      try {
+        const final = await chatWithTools({
+          model: MODEL,
+          messages,
+          tools: [WEB_SEARCH_TOOL],
+          numCtx: NUM_CTX,
+          keepAlive: "2m",
+          maxIterations: 3,
+          onStatus: (msg) => {
+            // Render status updates as italic markdown so they're visually
+            // distinct from the final answer.
+            enqueue(`_${msg}_\n\n`);
+          },
+          handler: async (name, args) => {
+            if (name === "web_search") {
+              const query = String(args.query ?? "").trim();
+              if (!query) return "Empty query.";
+              try {
+                const results = await webSearch(query, 5);
+                return formatResultsForModel(results);
+              } catch (e) {
+                return `Search failed: ${e instanceof Error ? e.message : String(e)}`;
+              }
+            }
+            return `Unknown tool: ${name}`;
+          },
+        });
+        enqueue(final);
+      } catch (e) {
+        enqueue(
+          `\n\n_(Web-search-mode error: ${
+            e instanceof Error ? e.message : String(e)
+          })_`,
+        );
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, { headers: ndjsonHeaders() });
+}
+
+function ndjsonHeaders() {
+  return {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Accel-Buffering": "no",
+  };
 }
 
 function jsonError(status: number, message: string) {
