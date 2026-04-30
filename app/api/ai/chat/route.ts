@@ -39,22 +39,37 @@ const WEB_SEARCH_TOOL: OllamaTool = {
 };
 
 // Patterns that indicate the user explicitly wants the web. If matched, we
-// enable the web_search tool and instruct the model to use it.
+// enable the web_search tool and instruct the model to use it. Bias is
+// toward over-detection: false positives just mean "tool is available";
+// the model can still choose not to call it.
 const SEARCH_INTENT_PATTERNS: RegExp[] = [
-  /\bsearch\s+(online|web|the\s+(web|net|internet))\b/i,
-  /\blook\s+(it|this|that)\s+up\b/i,
+  // Direct search verbs
+  /\bsearch\b/i,
+  /\blook\s+up\b/i,
   /\blook\s+(online|on\s+the\s+web|things\s+up)\b/i,
-  /\bgoogle\s+(it|this|that)\b/i,
-  /\b(verify|fact[\s-]?check)\b/i,
-  /\bvalidate\s+(your|this|that)?\s*(answer|claim|response|reply)\b/i,
-  /\bcite\s+(your\s+)?(sources?|references?)\b/i,
-  /\bprovide\s+(a\s+)?(source|citation|reference|link)\b/i,
-  /\bgive\s+me\s+(a\s+)?(source|citation|reference|link)\b/i,
+  /\bgoogle\s+(it|this|that|for)\b/i,
+  /\bbrowse\s+(the\s+web|online|for)\b/i,
+
+  // Verification / fact-checking
+  /\b(verify|fact[\s-]?check|double[\s-]?check)\b/i,
+  /\bvalidate\s+(your|this|that)?\s*(answer|claim|response|reply|info|information)\b/i,
+  /\bis\s+(this|that|it)\s+still\s+(true|valid|accurate|correct|current|right)\b/i,
+
+  // Sources / citations / references
+  /\b(cite|citation|citations|sources?|references?)\b/i,
+  /\bprovide\s+(a\s+)?(source|citation|reference|link|url)/i,
+  /\bgive\s+me\s+(a\s+)?(source|citation|reference|link|url|some\s+links)/i,
+  /\bwith\s+(sources?|references?|citations?|links?)\b/i,
   /\bwhere\s+can\s+i\s+(read|find|learn)\s+more\b/i,
-  /\b(latest|current|recent)\s+(version|release|news|update|change|api|spec)\b/i,
+  /\bon\s+the\s+(web|net|internet)\b/i,
+
+  // "Latest" / freshness signals
+  /\b(latest|newest|current|currently|recent(ly)?|up[\s-]?to[\s-]?date)\b/i,
   /\bas\s+of\s+(20\d{2}|today|now)\b/i,
-  /\bis\s+(this|that|it)\s+still\s+(true|valid|accurate|correct|current)\b/i,
-  /\b(mdn|w3c|whatwg|tc39)\s+(say|says|reference|docs?)\b/i,
+  /\bin\s+20\d{2}\b/i,
+
+  // Doc-source name-drops
+  /\b(mdn|w3c|whatwg|tc39|caniuse|stackoverflow)\b/i,
 ];
 
 function detectSearchIntent(text: string): boolean {
@@ -72,6 +87,9 @@ function buildSystemPrompt(
     ? `The user is currently on: **${pageTitle}**${pageDescription ? ` — ${pageDescription}` : ""}.`
     : `The user is browsing the app (path: ${pathname || "/"}).`;
 
+  const today = new Date().toISOString().slice(0, 10);
+  const dateLine = `Today's date is ${today}. Your training data has a cutoff well before this. Many things have shipped since — assume the JavaScript / React / web ecosystem has moved on.`;
+
   const toolsClause = toolsEnabled
     ? `
 
@@ -79,10 +97,24 @@ You have access to a \`web_search\` tool that returns live web results. ${
         intentExplicit
           ? "The user is explicitly asking you to search, verify, cite, or look something up. You MUST call web_search."
           : "Call it when you need current information, citations, or to verify a claim."
-      } After receiving results, write your answer with markdown links to the sources you actually used. End with a "Sources:" section listing each cited link.`
+      }
+
+CRITICAL — query construction:
+- Preserve the user's exact terms (especially version numbers like "React 19", library names, API names). Do NOT silently rewrite "React 19" to "React 18" because your training says React 18 is the latest — that is exactly the kind of mistake the search tool is here to fix.
+- If the user mentions a specific version, library, or API, that token must appear in your search query verbatim.
+
+CRITICAL — when search results conflict with your training:
+- TRUST the search results. They are current; your training has a cutoff date and is often outdated, especially for fast-moving libraries like React, Next.js, TypeScript, Node, and the web platform.
+- If multiple credible sources (especially official docs like react.dev, MDN, the W3C) describe something as released and documented, treat it as released and documented. Report what they say.
+- Do NOT hedge with phrases like "as of my last update", "this might be speculative", "this is unconfirmed", "no official release", "this is hypothetical", or "the latest is actually <older version>". If react.dev shows a hook reference page for it, the hook exists.
+- It IS appropriate to mention if results are sparse, contradictory, or appear to come from low-quality blogs.
+
+After receiving results, write your answer with markdown links to the sources you actually used. End with a "Sources:" section listing each cited link.`
     : "";
 
   return `You are a concise study assistant embedded in a front-end interview prep app. You help a job-seeking engineer study JavaScript, TypeScript, React, HTML, CSS, accessibility, performance, and front-end architecture.
+
+${dateLine}
 
 ${location}
 
