@@ -1,0 +1,68 @@
+---
+title: "APIs (REST, GraphQL, Real-time)"
+description: "Designing, consuming, and securing APIs — REST mechanics, GraphQL trade-offs, auth, versioning, rate limiting, and real-time options."
+level: "intermediate"
+estimatedHours: 6
+tags: ["apis", "rest", "graphql", "http", "backend", "interviews"]
+sections:
+  - title: "Quick reference"
+    steps:
+      - kind: "note"
+        slug: "apis-cheat-sheet"
+        note: "Skim first; covers REST, auth, versioning, real-time, rate limiting at a glance."
+  - title: "REST in depth"
+    steps:
+      - kind: "note"
+        slug: "rest-apis"
+        note: "Resource modeling, status codes, idempotency."
+      - kind: "exercise"
+        slug: "resilient-fetch"
+        note: "Retry-with-backoff, timeouts, AbortController — production-quality fetch."
+      - kind: "quiz"
+        topic: "REST principles, HTTP verbs, idempotency, status codes (200/201/204/400/401/403/404/409/422/429/500/502/503), resource modeling"
+        count: 7
+        title: "REST mechanics quiz"
+  - title: "Authentication"
+    steps:
+      - kind: "quiz"
+        topic: "API authentication: API keys, HTTP Basic, JWT (header/payload/signature, exp/iss/aud, HS256 vs RS256), OAuth 2.0 flows (authorization code with PKCE, client credentials)"
+        count: 7
+        title: "Auth quiz"
+  - title: "Operational concerns"
+    steps:
+      - kind: "quiz"
+        topic: "Rate limiting (token bucket, sliding window, X-RateLimit headers, 429 + Retry-After), HTTP caching (Cache-Control, ETag, If-None-Match, max-age), pagination (offset vs cursor)"
+        count: 6
+        title: "Rate limiting, caching, pagination quiz"
+      - kind: "quiz"
+        topic: "API versioning strategies (URL, header, content-type), CORS preflight, error response shapes (RFC 7807 problem+json), webhook design (signature verification, idempotency, async processing)"
+        count: 6
+        title: "Versioning, CORS, errors, webhooks quiz"
+  - title: "GraphQL"
+    steps:
+      - kind: "note"
+        slug: "graphql"
+        note: "Schema, resolvers, N+1 + DataLoader, when to pick over REST."
+      - kind: "quiz"
+        topic: "GraphQL fundamentals: schema definition language, resolvers, queries vs mutations vs subscriptions, the N+1 problem and DataLoader, schema federation"
+        count: 7
+        title: "GraphQL quiz"
+  - title: "Real-time options"
+    steps:
+      - kind: "quiz"
+        topic: "Real-time API patterns: polling vs long polling vs Server-Sent Events vs WebSocket — when to pick each, traffic cost, bidirectionality"
+        count: 5
+        title: "Real-time quiz"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "system-design"
+        title: "Mock API design interview"
+        note: "Walk through designing the API layer for a real product."
+---
+
+A focused track on the API layer. The cheat sheet anchors the high-level surface; REST and GraphQL each get their own deep-dive note plus quizzes; auth, versioning, rate limiting, and CORS each become a checkpoint quiz so the design judgments stick.
+
+The hands-on exercise (`resilient-fetch`) drills the retry / timeout / abort patterns that production-quality API consumers need — interviewers love this one.
+
+End with a system-design mock to practice talking through the API layer of a real product end-to-end.

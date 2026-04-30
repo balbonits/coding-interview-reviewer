@@ -1,0 +1,216 @@
+---
+title: "APIs Cheat Sheet"
+tags: ["apis", "rest", "graphql", "http", "websockets", "backend", "interviews", "cheat-sheet"]
+related: ["rest-apis", "graphql", "node-server-side"]
+---
+
+A working reference across the API surface: REST, GraphQL, real-time, auth, versioning, rate limiting, and the design judgments interviewers ask about. For deeper REST mechanics see [REST APIs](./rest-apis); for the GraphQL primer see [GraphQL](./graphql).
+
+## REST in one page
+
+REST is resource-based and stateless. Each request fully describes itself; servers don't track per-client state.
+
+**Verbs and idempotency:**
+
+| Verb   | Idempotent? | Cacheable? | Typical use |
+|--------|-------------|------------|-------------|
+| GET    | Yes         | Yes        | Read a resource |
+| POST   | No          | No         | Create, or non-resource action |
+| PUT    | Yes         | No         | Replace a resource (the full thing) |
+| PATCH  | No (RFC) — usually idempotent in practice | No | Partial update |
+| DELETE | Yes         | No         | Remove a resource |
+
+Idempotent = same request fired N times has the same effect as firing once. Critical for retries.
+
+**Status codes that actually matter:**
+
+```
+2xx success
+  200 OK             general success
+  201 Created        new resource (return Location header)
+  202 Accepted       async work queued
+  204 No Content     success with empty body (DELETE, PUT)
+3xx redirection
+  301 Moved Permanently
+  304 Not Modified   matches client's ETag/If-Modified-Since
+4xx client error
+  400 Bad Request    malformed
+  401 Unauthorized   no/bad credentials
+  403 Forbidden      authenticated but not allowed
+  404 Not Found
+  409 Conflict       state conflict (e.g. version mismatch)
+  422 Unprocessable  validation failed
+  429 Too Many Requests
+5xx server error
+  500 Internal       unhandled
+  502 Bad Gateway    upstream broken
+  503 Unavailable    overload / maintenance
+  504 Gateway Timeout
+```
+
+Don't return 200 with `{ error: "..." }` body on errors. Use real status codes; consumers (and observability tools) rely on them.
+
+## Authentication
+
+| Scheme | Use when | Format |
+|---|---|---|
+| **API key** | Server-to-server, simple internal | `Authorization: ApiKey <key>` or `X-API-Key:` |
+| **HTTP Basic** | Internal tools, prototypes (always over TLS) | `Authorization: Basic base64(user:pass)` |
+| **Bearer / JWT** | Sessions, mobile, SPA | `Authorization: Bearer eyJhbG...` |
+| **OAuth 2.0** | Third-party access on behalf of a user | Authorization-code flow, then bearer token |
+| **mTLS** | High-security service-to-service | Both sides present TLS certificates |
+
+JWT specifics:
+- Three parts: `header.payload.signature`, base64url-encoded.
+- Payload is **not encrypted**, just signed. Don't put secrets in claims.
+- Validate `exp` (expiry), `iss` (issuer), `aud` (audience) on every request.
+- Use `HS256` only if you can keep the shared secret. `RS256` if any consumer is external.
+
+OAuth 2.0 flows you're expected to know:
+- **Authorization Code** (with PKCE) — web apps and mobile.
+- **Client Credentials** — service-to-service, no user.
+- **Implicit** and **Resource Owner Password** are deprecated; don't suggest them.
+
+## Versioning
+
+Three common strategies:
+
+```
+1. URL                    /v1/users        most common, easy to debug
+2. Custom header          API-Version: 2024-04-30
+3. Accept header          Accept: application/vnd.example.v2+json
+```
+
+Pick one and stick to it. Versioning is a contract — never break a published version. Add a new one and deprecate the old with a sunset header.
+
+## Rate limiting
+
+Server side picks an algorithm (token bucket / leaky bucket / fixed window / sliding window). Tell the client through headers:
+
+```
+X-RateLimit-Limit:     100
+X-RateLimit-Remaining: 47
+X-RateLimit-Reset:     1735689600   (Unix timestamp)
+Retry-After:           120          (seconds, when 429)
+```
+
+The two algorithms to know:
+- **Token bucket**: bucket holds N tokens; one consumed per request; refills at R tokens/sec. Allows bursts up to N, sustained R/sec. Most production rate limiters.
+- **Sliding window**: count requests in the last T seconds. Smoother than fixed-window but more expensive to compute.
+
+## Caching
+
+```
+# Set on the response
+Cache-Control: max-age=3600, public      # cacheable, 1 hour
+Cache-Control: no-store                  # never cache (sensitive)
+Cache-Control: private, max-age=60       # browser only, not CDN
+ETag: "abc123"                           # version stamp
+
+# Client revalidates with
+If-None-Match: "abc123"
+
+# Server responds 304 Not Modified if it still matches
+```
+
+Use `ETag` for resources that change unpredictably; use `Cache-Control: max-age` when you can predict freshness.
+
+## Pagination
+
+| Style | Pros | Cons |
+|---|---|---|
+| **Offset/limit** (`?page=3&size=20`) | Simple, supports random access | Slow on large offsets, items shift if data changes |
+| **Cursor/keyset** (`?after=last_id`) | Stable across writes, fast at scale | No "page 5" jumping; harder for UIs |
+| **Page tokens** (`?next_page_token=xxx`) | Server-defined, opaque | Client can't construct a token themselves |
+
+Keyset/cursor wins for anything large. Don't paginate with `OFFSET 1000000` in the database — it's O(n).
+
+## Error responses
+
+RFC 7807 (problem+json) gives you a standard shape:
+
+```json
+HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/problem+json
+
+{
+  "type": "https://example.com/errors/validation",
+  "title": "Validation failed",
+  "status": 422,
+  "detail": "field 'email' is not a valid email address",
+  "instance": "/users",
+  "errors": [
+    { "field": "email", "code": "invalid_format" }
+  ]
+}
+```
+
+You don't have to use problem+json verbatim, but pick a consistent shape and document it. Always include a stable error code per case so clients can branch without parsing prose.
+
+## CORS, in plain words
+
+Same-origin policy blocks cross-origin requests by default. CORS is the server's way of saying *some* cross-origin requests are OK.
+
+```
+# Server allows origin to read response
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Credentials: true     # for cookies/Authorization
+Access-Control-Allow-Methods: GET, POST
+Access-Control-Allow-Headers: Authorization, Content-Type
+```
+
+For non-simple requests (custom headers, methods other than GET/POST/HEAD, JSON content-type with credentials), the browser sends a **preflight** `OPTIONS` request first. Server must respond with the allow-headers within ~10s or the real request never fires.
+
+## Webhooks
+
+Webhook = your server provides a URL; a third party POSTs events to it.
+
+Three things webhook implementations must handle:
+- **Signature verification** — HMAC-SHA256 of the body with a shared secret in `X-Signature` header. Use `crypto.timingSafeEqual` to compare.
+- **Idempotency** — providers retry. Persist the event ID and skip duplicates.
+- **Async processing** — respond 200 immediately, process in a background job. Don't make the provider wait for your slow database.
+
+## Real-time: WebSocket vs SSE vs polling
+
+| Approach | Direction | Cost | Use when |
+|---|---|---|---|
+| **Polling** (`GET /updates?since=t`) | Client→Server | Simple, but wastes traffic | < 1 message/min, simple infrastructure |
+| **Long polling** | Client→Server, blocks | OK | Legacy infra without WS support |
+| **Server-Sent Events** (`text/event-stream`) | Server→Client only | Easy: built into browsers, runs over HTTP | Server pushing, no client-to-server stream needed |
+| **WebSocket** | Bidirectional | Heavier, sticky connection | Chat, collaborative editing, gaming |
+
+Default: SSE for one-way pushes, WebSocket for bidirectional. Polling only if you can't run a persistent connection.
+
+## GraphQL — the 90-second version
+
+Skip if you've never used it. See the [GraphQL note](./graphql) for the full primer.
+
+```graphql
+query GetUser($id: ID!) {
+  user(id: $id) {
+    name
+    email
+    posts(first: 5) { id title }
+  }
+}
+```
+
+- **One endpoint** (`POST /graphql`). Client picks fields.
+- **Schema** defines types and resolvers.
+- **N+1 problem** is the classic gotcha — solve with DataLoader (batches per-request fetches).
+- Subscriptions exist but most teams use a separate WebSocket layer.
+
+## gRPC — when interviewers ask
+
+- Binary protocol (Protobuf) over HTTP/2. Faster than JSON-over-REST.
+- Code generation gives you typed clients in any language.
+- Four call types: unary, server-streaming, client-streaming, bidirectional.
+- Best for service-to-service inside one organization. Browsers can't speak it natively (need gRPC-Web proxy).
+
+## Likely interview questions
+
+- "What's the difference between PUT and PATCH?" — PUT replaces the whole resource (idempotent by definition); PATCH is a partial update (idempotent in practice if you write it right).
+- "How would you make this endpoint safely retry-able?" — make it idempotent via natural keys, or accept an `Idempotency-Key` header and dedupe by it.
+- "When would you pick GraphQL over REST?" — when the client's data needs vary widely (mobile vs web vs partners) and the cost of round-trips matters more than cache simplicity.
+- "How do you version an API without breaking clients?" — add a new version, never break the old; document a sunset timeline; use a deprecation header or response field.
+- "How would you rate-limit a public API?" — token bucket per API key, response headers communicating the limit, 429 with `Retry-After` when exceeded.

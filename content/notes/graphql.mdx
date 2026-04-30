@@ -1,0 +1,193 @@
+---
+title: "GraphQL"
+tags: ["graphql", "apis", "backend", "frontend", "interviews"]
+related: ["apis-cheat-sheet", "rest-apis"]
+---
+
+GraphQL is a query language and runtime where the client tells the server exactly which fields it wants. One endpoint, no over-fetching, strict typed schema. Born at Facebook, open-sourced 2015, now used at GitHub, Shopify, Airbnb, and most "we have lots of clients" companies.
+
+## The core idea
+
+REST: server defines the shape of the response. Client gets what it gets.
+
+GraphQL: client defines the shape of the response by writing a query. Server validates against the schema and returns exactly those fields.
+
+```graphql
+# Client query
+query GetUser($id: ID!) {
+  user(id: $id) {
+    name
+    email
+    posts(first: 5) {
+      id
+      title
+      comments(first: 3) {
+        author { name }
+        body
+      }
+    }
+  }
+}
+```
+
+Same endpoint serves any query. Compare to REST where you'd need `/users/:id`, `/users/:id/posts`, `/posts/:id/comments` and stitch them client-side.
+
+## The schema
+
+Schema = the contract. Defined in SDL (Schema Definition Language):
+
+```graphql
+type Query {
+  user(id: ID!): User
+  posts(first: Int, after: String): PostConnection!
+}
+
+type Mutation {
+  createPost(title: String!, body: String!): Post!
+}
+
+type Subscription {
+  postCreated: Post!
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  posts(first: Int = 10): [Post!]!
+}
+
+type Post {
+  id: ID!
+  title: String!
+  body: String!
+  author: User!
+  comments(first: Int = 5): [Comment!]!
+}
+
+type Comment {
+  id: ID!
+  author: User!
+  body: String!
+}
+```
+
+`!` means non-null. `[Post!]!` means a non-null list of non-null Posts. The strictness is the point — clients can rely on it.
+
+## Resolvers
+
+A resolver is a function per field. The server walks the query, calling resolvers as it goes.
+
+```ts
+const resolvers = {
+  Query: {
+    user: (_parent, { id }, ctx) => ctx.db.users.findById(id),
+  },
+  User: {
+    posts: (user, { first = 10 }, ctx) =>
+      ctx.db.posts.where({ userId: user.id }).limit(first),
+  },
+  Post: {
+    author: (post, _args, ctx) => ctx.db.users.findById(post.userId),
+    comments: (post, { first = 5 }, ctx) =>
+      ctx.db.comments.where({ postId: post.id }).limit(first),
+  },
+};
+```
+
+Each resolver gets `(parent, args, context, info)`. Context is the per-request bag — DB connection, current user, loaders, etc.
+
+## The N+1 problem (and DataLoader)
+
+Naïve resolvers cause this:
+
+```graphql
+{
+  posts(first: 10) {     # 1 query: SELECT * FROM posts LIMIT 10
+    title
+    author { name }      # 10 queries: one per post! N+1.
+  }
+}
+```
+
+Fix: **DataLoader** batches and caches reads inside a single request.
+
+```ts
+const userLoader = new DataLoader(async (userIds: string[]) => {
+  const users = await db.users.where({ id: { $in: userIds } });
+  return userIds.map((id) => users.find((u) => u.id === id));
+});
+
+const resolvers = {
+  Post: {
+    author: (post, _args, ctx) => ctx.userLoader.load(post.authorId),
+  },
+};
+```
+
+Now: 1 query for posts, 1 batched query for all 10 authors. Two queries instead of eleven. DataLoader is the single most important GraphQL technique to know.
+
+## Mutations
+
+Same idea — but conventionally used for write operations.
+
+```graphql
+mutation CreatePost($title: String!, $body: String!) {
+  createPost(title: $title, body: $body) {
+    id
+    title
+    createdAt
+  }
+}
+```
+
+Mutations run in series (not parallel) so you can chain them deterministically. Inputs are usually wrapped in an `input` type to keep the signature clean.
+
+## Subscriptions
+
+Real-time. Client opens a WebSocket; server pushes events when fields change.
+
+```graphql
+subscription {
+  postCreated {
+    id
+    title
+    author { name }
+  }
+}
+```
+
+Most teams skip GraphQL subscriptions and use a separate Pub/Sub layer (Redis pub/sub, Kafka, dedicated WS server). Subscriptions are the most opinionated/complex part of the spec.
+
+## Common interview questions
+
+- **REST vs GraphQL trade-offs?**
+  - REST wins on: HTTP-level caching (`Cache-Control`, ETag), simple debugging (curl), broad tooling, file uploads.
+  - GraphQL wins on: avoiding over/under-fetching, evolving APIs without versioning, multiple clients with different needs.
+  - GraphQL costs: harder caching, more server complexity (resolvers + DataLoaders), bigger learning curve, single endpoint = harder to rate-limit per "operation."
+
+- **How does GraphQL avoid versioning?**
+  Add new fields freely; never remove. Mark obsolete fields with `@deprecated(reason: "use X instead")`. Clients only request what they want, so adding fields is safe.
+
+- **What's the N+1 problem?** See above. DataLoader.
+
+- **Schema federation?** Apollo Federation / GraphQL Federation v2. Multiple sub-graphs (user-service, posts-service) compose into one super-graph. Each team owns their piece; the gateway stitches.
+
+- **How do you handle authorization?** In resolvers, against the request context. Don't put auth in middleware that doesn't know which fields are being read. Schema directives (`@auth(role: ADMIN)`) are a common middle ground.
+
+- **Persisted queries?** Hash known queries on the server; clients send the hash plus variables, not the full query string. Reduces payload + lets you whitelist queries in production.
+
+## When to NOT pick GraphQL
+
+- Public API with predictable shapes (REST is easier for consumers).
+- Tiny app with one client (GraphQL infrastructure isn't worth it).
+- File uploads / streaming (GraphQL handles them awkwardly via `multipart/form-data` extensions).
+- Heavy CDN / HTTP caching needs (every request is a POST to one endpoint).
+
+## Tooling worth knowing
+
+- **Apollo Server / Apollo Client** — the most common stack.
+- **graphql-yoga** / **Mercurius** (Fastify) — lighter alternatives.
+- **GraphQL Code Generator** — generates typed TS hooks from schema + queries. Practically required for TS + GraphQL.
+- **Relay** — Facebook's client; opinionated, powerful, steeper curve than Apollo Client.
+- **GraphiQL / GraphQL Playground** — browser-based query IDE; ships with most servers.
