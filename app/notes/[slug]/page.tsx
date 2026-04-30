@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { getNote, listNoteSlugs } from "@/lib/notes";
 import { mdxComponents } from "@/components/MdxComponents";
 import { SetPageContext } from "@/components/SetPageContext";
+import { QuizMeButton } from "@/components/QuizMeButton";
 import { Badge } from "@/components/ui/badge";
 
 export async function generateStaticParams() {
@@ -44,7 +45,10 @@ export default async function NotePage({
       </Link>
 
       <header className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">{note.title}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">{note.title}</h1>
+          <QuizMeButton source="note" slug={note.slug} />
+        </div>
         <div className="flex flex-wrap gap-2">
           {note.tags.map((tag) => (
             <Link key={tag} href={`/tags/${encodeURIComponent(tag)}`}>

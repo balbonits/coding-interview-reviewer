@@ -170,19 +170,55 @@ Click `Save to Notes` (header) → server fetches the session, calls Ollama with
 Notes live at `/notes/saved/[id]` and surface in a `From your mock interviews` section on the `/notes` index. Schema: `{ id, sessionId, title, track, context?, tags, content, createdAt, updatedAt? }`. Title and tags are parsed from the AI output (`# Title` heading + `**Tags:**` line).
 
 **Env vars (memory caps):**
-- `OLLAMA_INTERVIEW_MODEL` — default `qwen2.5:14b` (Q4_K_M ≈ 9 GB resident). Used by both the streaming interviewer and the Save-to-Notes summarizer.
+- `OLLAMA_INTERVIEW_MODEL` — default `qwen2.5:14b` (Q4_K_M ≈ 9 GB resident). Used by the streaming interviewer, Save-to-Notes summarizer, and the Quiz generator.
 - `OLLAMA_URL` — default `http://localhost:11434`.
 - `OLLAMA_NUM_CTX` — default `4096`. Lower this if you need to shrink the KV cache further.
 - `OLLAMA_NOTES_NUM_CTX` — default `8192`. The summarizer needs to fit the whole transcript, so it gets a bigger window.
+- `OLLAMA_QUIZ_NUM_CTX` — default `8192`. Same reasoning for quiz generation when sourcing from notes / exercises.
 - Recommend setting `OLLAMA_MAX_LOADED_MODELS=1` in your shell so two models can't co-load. `keep_alive` is hard-coded to `2m` in `lib/ollama.ts` so the model unloads quickly when idle.
+
+### Quiz feature (`/quiz`)
+
+Drill-mode practice page. Users pick a topic prompt or a saved interview note as the source, the local AI generates a small batch of questions, and the user works through them one at a time with immediate per-question feedback.
+
+**Question types:**
+- `mcq` — 4 distinct options, one correct, per-option rationale shown after answering.
+- `predict-output` — short JS snippet with `console.log`s; user types the expected output; matched against the AI's claimed output (whitespace-normalized).
+
+**Validation pipeline (in `lib/quizGenerator.ts`):**
+Every question is validated before the user sees it:
+1. Strict JSON parse of the model's output (with fence salvaging for stray ` ```json ` wrappers).
+2. Schema validator (`isValidMCQ` / `isValidPredictOutput` in `lib/quiz.ts`) — type, distinct options, `correctIndex` in range, rationale per option, etc.
+3. **For predict-output:** the snippet is actually executed in a fresh `vm.runInNewContext` sandbox (1s timeout, captured `console.log`) and the real output is compared to the AI's claimed `expectedOutput`. Mismatch = discarded. This catches the bulk of AI hallucinations.
+4. If the validator rejects too many questions, the generator re-prompts up to 3 attempts to top up the batch. If it still falls short the UI tells the user how many were rejected.
+
+**Sources (`QuizSource`):**
+- `topic` — free-form prompt (`?source=topic&topic=closures`)
+- `interview-note` — pulls from a saved AI study note (`?source=interview-note&id=...`)
+- `note` — pulls from an MDX note in `content/notes/` (`?source=note&slug=...`)
+- `exercise` — pulls from an exercise's `meta.json` + problem statement (`?source=exercise&slug=...`)
+
+**Quiz me buttons (`components/QuizMeButton.tsx`):**
+A universal entry point. Sends the user to `/quiz` with URL params that auto-trigger generation. Wired into:
+- Exercise pages, MDX note pages, saved interview-note pages
+- Interview session pages (only after a note has been saved — the button uses the note's content as quiz source)
+
+**Persistence:**
+- Quizzes themselves are ephemeral (held in client state)
+- Each individual answer attempt is POSTed to `/api/quiz/attempts` and saved in MongoDB (`quiz_attempts`) for future analytics / `/review` integration
+
+### Playwright
+
+`@playwright/test` is installed but **not yet wired into anything**. Future plan: a `tutorial` page that uses Playwright in headless mode to capture screenshots of the app in known states for documentation. No E2E tests yet — don't write any unless explicitly asked.
 
 ## What's shipped
 
 All core features are complete. The app is local-only by design (Ollama can't run in the cloud).
 
-- **`/exercises`** — Sandpack exercises, 5 templates, auto-graded tests, reveal solution, AI hint/review/explain panel
-- **`/notes`** — MDX note library + a `From your mock interviews` section listing AI-generated study notes (`/notes/saved/[id]`), tag filtering, 12 notes across all front-end subjects
-- **`/interview`** — Streaming AI mock interviewer with 7 fixed tracks + a `Custom Mock Interview` track that takes a JD and simulates an actual interview for the role. Sessions in MongoDB, Markdown rendering, Mermaid diagrams, Web Speech API voice (both directions), per-message chat controls (copy / regenerate / speak), `.md` transcript export, and `Save to Notes` for AI-distilled study notes (1:1 with session)
+- **`/exercises`** — Sandpack exercises, 5 templates, auto-graded tests, reveal solution, AI hint/review/explain panel, `Quiz me` button that generates a quiz from the exercise content
+- **`/notes`** — MDX note library + a `From your mock interviews` section listing AI-generated study notes (`/notes/saved/[id]`), tag filtering, 12 notes across all front-end subjects, `Quiz me` button on every note
+- **`/interview`** — Streaming AI mock interviewer with 7 fixed tracks + a `Custom Mock Interview` track that takes a JD and simulates an actual interview for the role. Sessions in MongoDB, Markdown rendering, Mermaid diagrams, Web Speech API voice (both directions), per-message chat controls (copy / regenerate / speak), `.md` transcript export, `Save to Notes` for AI-distilled study notes (1:1 with session), and `Quiz me` once a note has been saved
+- **`/quiz`** — AI-generated drill-mode questions (MCQ + predict-output) with full validation pipeline. See *Quiz feature* below.
 - **`/review`** — SM-2 spaced repetition queue, MongoDB-backed
 - **`/news`** — RSS aggregator (JS Weekly, CSS Weekly, Smashing, Dev.to), per-item AI summarization
 - **`/capture`** — Quick capture form, MongoDB persistence, MDX export

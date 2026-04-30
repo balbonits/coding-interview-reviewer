@@ -7,6 +7,7 @@ import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MermaidBlock } from "@/components/MermaidBlock";
+import { QuizMeButton } from "@/components/QuizMeButton";
 import {
   deleteInterviewNote,
   getInterviewNote,
@@ -69,6 +70,7 @@ export default function SavedNotePage({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="text-3xl font-bold tracking-tight">{note.title}</h1>
           <div className="flex gap-2">
+            <QuizMeButton source="interview-note" id={note.id} />
             <Link href={`/interview/${note.sessionId}`}>
               <Button type="button" variant="outline" size="sm">
                 Open source session

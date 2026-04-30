@@ -23,6 +23,7 @@ import {
   VolumeOff,
 } from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
+import { QuizMeButton } from "@/components/QuizMeButton";
 import { Button } from "@/components/ui/button";
 import { InlineRename } from "@/components/ui/inline-rename";
 import { Textarea } from "@/components/ui/textarea";
@@ -565,6 +566,9 @@ export default function InterviewSessionPage({
                       : "Save to Notes"}
                 </span>
               </Button>
+            )}
+            {savedNote && (
+              <QuizMeButton source="interview-note" id={savedNote.id} />
             )}
             <Button
               type="button"

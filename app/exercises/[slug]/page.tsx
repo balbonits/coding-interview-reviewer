@@ -10,6 +10,7 @@ import {
 import { ExerciseSandbox } from "@/components/ExerciseSandbox";
 import { mdxComponents } from "@/components/MdxComponents";
 import { SetPageContext } from "@/components/SetPageContext";
+import { QuizMeButton } from "@/components/QuizMeButton";
 import { Badge } from "@/components/ui/badge";
 
 const difficultyColor: Record<string, string> = {
@@ -66,9 +67,12 @@ export default async function ExercisePage({
             ~{exercise.meta.estimatedMinutes} min
           </span>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight">
-          {exercise.meta.title}
-        </h1>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">
+            {exercise.meta.title}
+          </h1>
+          <QuizMeButton source="exercise" slug={exercise.meta.slug} />
+        </div>
         <div className="flex flex-wrap gap-2">
           {exercise.meta.tags.map((tag) => (
             <Badge key={tag} variant="secondary">
