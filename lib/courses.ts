@@ -79,12 +79,15 @@ export async function listAllProgress(): Promise<CourseProgress[]> {
 export async function markStepDone(
   courseSlug: string,
   stepIdValue: string,
-): Promise<void> {
-  await fetch("/api/course-progress", {
+  step?: CourseStep,
+): Promise<{ reviewSeeded?: boolean }> {
+  const res = await fetch("/api/course-progress", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ courseSlug, stepId: stepIdValue }),
+    body: JSON.stringify({ courseSlug, stepId: stepIdValue, step }),
   });
+  if (!res.ok) return {};
+  return res.json() as Promise<{ reviewSeeded?: boolean }>;
 }
 
 export async function markStepUndone(stepIdValue: string): Promise<void> {

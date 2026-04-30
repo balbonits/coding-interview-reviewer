@@ -73,8 +73,11 @@ function stepKindLabel(step: CourseStep): string {
 export function CourseStepList({ course }: { course: CourseManifest }) {
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [reviewToast, setReviewToast] = useState<string | null>(null);
 
   useEffect(() => {
+    // Use the AI course slug (`ai:<id>`) as the progress slug; CourseStepList
+    // is shared between hand-authored and AI-generated courses.
     listProgress(course.slug)
       .then((progress) => {
         setCompleted(new Set(progress.map((p) => p.stepId)));
@@ -87,7 +90,7 @@ export function CourseStepList({ course }: { course: CourseManifest }) {
   const done = completed.size;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  async function toggle(id: string) {
+  async function toggle(id: string, step: CourseStep) {
     if (completed.has(id)) {
       setCompleted((prev) => {
         const next = new Set(prev);
@@ -101,12 +104,26 @@ export function CourseStepList({ course }: { course: CourseManifest }) {
         next.add(id);
         return next;
       });
-      await markStepDone(course.slug, id);
+      const result = await markStepDone(course.slug, id, step);
+      if (result.reviewSeeded) {
+        const label =
+          step.kind === "note" ? "note" : step.kind === "exercise" ? "exercise" : "step";
+        setReviewToast(`Added ${label} to /review queue`);
+        window.setTimeout(() => setReviewToast(null), 3000);
+      }
     }
   }
 
   return (
     <section className="space-y-6">
+      {reviewToast && (
+        <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm">
+          ✓ {reviewToast} —{" "}
+          <Link href="/review" className="underline underline-offset-2 hover:opacity-80">
+            view queue
+          </Link>
+        </div>
+      )}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">Progress</span>
@@ -158,7 +175,7 @@ export function CourseStepList({ course }: { course: CourseManifest }) {
                     >
                       <button
                         type="button"
-                        onClick={() => void toggle(id)}
+                        onClick={() => void toggle(id, step)}
                         aria-label={
                           isDone ? "Mark as not done" : "Mark as done"
                         }

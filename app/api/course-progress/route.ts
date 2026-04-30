@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import type { CourseProgress } from "@/lib/courses";
+import type { CourseProgress, CourseStep } from "@/lib/courses";
+import { makeFresh, type ReviewItem } from "@/lib/spaced-repetition";
+import { getNote } from "@/lib/notes";
+import { getExercise } from "@/lib/exercises";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +11,9 @@ export const dynamic = "force-dynamic";
 const COL = "course_progress";
 
 interface ProgressDoc extends CourseProgress {
+  _id: string;
+}
+interface ReviewDoc extends ReviewItem {
   _id: string;
 }
 
@@ -29,9 +35,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { courseSlug, stepId } = (await req.json()) as {
+    const { courseSlug, stepId, step } = (await req.json()) as {
       courseSlug?: string;
       stepId?: string;
+      step?: CourseStep;
     };
     if (!courseSlug || !stepId) {
       return NextResponse.json(
@@ -39,21 +46,55 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
+    const db = await getDb();
     const doc: ProgressDoc = {
       _id: stepId,
       stepId,
       courseSlug,
       completedAt: Date.now(),
     };
-    const db = await getDb();
-    // Upsert so re-marking is idempotent
     await db
       .collection<ProgressDoc>(COL)
       .replaceOne({ _id: stepId }, doc, { upsert: true });
-    return NextResponse.json(doc, { status: 201 });
+
+    // Phase 3: when a note/exercise step is marked done, seed a fresh entry
+    // into the SM-2 review queue (only if it doesn't already exist — we
+    // never overwrite an in-progress review item's schedule).
+    let reviewSeeded = false;
+    if (step?.kind === "note" || step?.kind === "exercise") {
+      reviewSeeded = await maybeSeedReview(step);
+    }
+
+    return NextResponse.json({ ...doc, reviewSeeded }, { status: 201 });
   } catch (e) {
     return err500(e);
   }
+}
+
+async function maybeSeedReview(
+  step: Extract<CourseStep, { kind: "note" | "exercise" }>,
+): Promise<boolean> {
+  const id = `${step.kind}:${step.slug}`;
+  const db = await getDb();
+  const existing = await db
+    .collection<ReviewDoc>("review_items")
+    .findOne({ _id: id });
+  if (existing) return false;
+
+  let title = step.title ?? step.slug;
+  if (step.kind === "note") {
+    const note = await getNote(step.slug);
+    if (note) title = note.title;
+  } else {
+    const ex = await getExercise(step.slug);
+    if (ex) title = ex.meta.title;
+  }
+
+  const fresh = makeFresh({ type: step.kind, slug: step.slug, title });
+  await db
+    .collection<ReviewDoc>("review_items")
+    .insertOne({ _id: fresh.id, ...fresh });
+  return true;
 }
 
 export async function DELETE(req: NextRequest) {
