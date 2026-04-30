@@ -8,6 +8,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import Markdown from "react-markdown";
+import { Check, Copy } from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { usePageContext } from "@/lib/pageContext";
 
@@ -21,7 +22,21 @@ export function FloatingChat() {
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  async function copyMessage(content: string, idx: number) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIdx(idx);
+      window.setTimeout(
+        () => setCopiedIdx((cur) => (cur === idx ? null : cur)),
+        1500,
+      );
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     if (open && scrollRef.current) {
@@ -151,7 +166,7 @@ export function FloatingChat() {
             {messages.map((m, i) => (
               <div
                 key={i}
-                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                className={`group/msg flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
               >
                 <div
                   className={`max-w-[88%] rounded-lg px-3 py-2 text-sm ${
@@ -209,6 +224,27 @@ export function FloatingChat() {
                     m.content
                   )}
                 </div>
+                {m.content.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => copyMessage(m.content, i)}
+                    title={copiedIdx === i ? "Copied!" : "Copy as Markdown"}
+                    aria-label={
+                      copiedIdx === i ? "Copied" : "Copy as Markdown"
+                    }
+                    className={`mt-0.5 rounded p-1 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 ${
+                      copiedIdx === i
+                        ? "opacity-100"
+                        : "opacity-0 group-hover/msg:opacity-100"
+                    }`}
+                  >
+                    {copiedIdx === i ? (
+                      <Check className="size-3" />
+                    ) : (
+                      <Copy className="size-3" />
+                    )}
+                  </button>
+                )}
               </div>
             ))}
             {error && (

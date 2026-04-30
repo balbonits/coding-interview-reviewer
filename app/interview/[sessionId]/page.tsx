@@ -11,7 +11,16 @@ import {
 import Markdown from "react-markdown";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Mic, MicOff, Volume2, VolumeOff } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  Mic,
+  MicOff,
+  RotateCcw,
+  Volume2,
+  VolumeOff,
+} from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { Button } from "@/components/ui/button";
 import { InlineRename } from "@/components/ui/inline-rename";
@@ -65,6 +74,7 @@ export default function InterviewSessionPage({
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [sttSupported, setSttSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
   const recognitionRef = useRef<RecognitionHandle | null>(null);
@@ -145,6 +155,92 @@ export default function InterviewSessionPage({
       onError: () => setSpeakingIdx(null),
     });
     if (!ok) setSpeakingIdx(null);
+  }
+
+  async function copyMessage(content: string, idx: number) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIdx(idx);
+      window.setTimeout(
+        () => setCopiedIdx((cur) => (cur === idx ? null : cur)),
+        1500,
+      );
+    } catch {
+      setError("Couldn't copy to clipboard.");
+    }
+  }
+
+  function regenerateLast() {
+    if (!session || isStreaming || session.endedAt) return;
+    const messages = session.messages;
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return;
+    cancelSpeech();
+    setSpeakingIdx(null);
+    const lastUserMsg = messages[lastUserIdx];
+    const rolledBack: InterviewSession = {
+      ...session,
+      messages: messages.slice(0, lastUserIdx),
+    };
+    setSession(rolledBack);
+    void send([lastUserMsg], rolledBack);
+  }
+
+  function exportMarkdown() {
+    if (!session) return;
+    const lines: string[] = [];
+    lines.push(`# ${sessionDisplayTitle(session)}`);
+    lines.push("");
+    lines.push(`- **Track:** ${trackLabel(session.track)}`);
+    lines.push(
+      `- **Started:** ${new Date(session.startedAt).toLocaleString()}`,
+    );
+    if (session.endedAt) {
+      lines.push(`- **Ended:** ${new Date(session.endedAt).toLocaleString()}`);
+    }
+    if (session.track === "custom" && session.context) {
+      const c = session.context;
+      if (c.roleTitle) lines.push(`- **Role:** ${c.roleTitle}`);
+      if (c.companyName) lines.push(`- **Company:** ${c.companyName}`);
+      if (c.jobDescription) {
+        lines.push("", "## Job Description", "", c.jobDescription);
+      }
+      if (c.notes) {
+        lines.push("", "## Candidate Notes", "", c.notes);
+      }
+    }
+    lines.push("", "---", "");
+
+    const kickoff = kickoffFor(session);
+    for (const m of session.messages) {
+      if (m.role === "system") continue;
+      if (m.content === kickoff) continue;
+      const label = m.role === "assistant" ? "Interviewer" : "You";
+      lines.push(`**${label}:**`, "", m.content, "");
+    }
+
+    const slug = (session.title || trackLabel(session.track))
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .toLowerCase();
+    const date = new Date(session.startedAt).toISOString().slice(0, 10);
+    const filename = `${slug || "interview"}-${date}.md`;
+
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   useEffect(() => {
@@ -311,6 +407,13 @@ export default function InterviewSessionPage({
   const visibleMessages = session.messages.filter(
     (m) => m.role !== "system" && m.content !== kickoff,
   );
+  let lastAssistantIdx = -1;
+  for (let i = visibleMessages.length - 1; i >= 0; i--) {
+    if (visibleMessages[i].role === "assistant") {
+      lastAssistantIdx = i;
+      break;
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4 h-[calc(100vh-12rem)]">
@@ -399,6 +502,17 @@ export default function InterviewSessionPage({
                 <span className="hidden sm:inline">Auto-speak</span>
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={exportMarkdown}
+              title="Export transcript as Markdown"
+              disabled={session.messages.length === 0}
+            >
+              <Download className="size-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
             {session.endedAt ? (
               <span className="text-muted-foreground">Session ended</span>
             ) : (
@@ -430,7 +544,11 @@ export default function InterviewSessionPage({
             message={m}
             ttsSupported={ttsSupported}
             isSpeaking={speakingIdx === i}
+            isCopied={copiedIdx === i}
+            canRegenerate={i === lastAssistantIdx && !isStreaming && !session.endedAt}
             onToggleSpeak={() => speakMessage(m.content, i)}
+            onCopy={() => copyMessage(m.content, i)}
+            onRegenerate={regenerateLast}
           />
         ))}
         {isStreaming &&
@@ -456,7 +574,7 @@ export default function InterviewSessionPage({
             placeholder={
               listening ? "Listening — speak your answer…" : "Type your answer…"
             }
-            className="min-h-24 resize-none"
+            className="min-h-24 max-h-64 resize-none overflow-y-auto"
             disabled={isStreaming}
           />
           {listening && interim && (
@@ -502,41 +620,41 @@ function Message({
   message,
   ttsSupported,
   isSpeaking,
+  isCopied,
+  canRegenerate,
   onToggleSpeak,
+  onCopy,
+  onRegenerate,
 }: {
   message: InterviewMessage;
   ttsSupported: boolean;
   isSpeaking: boolean;
+  isCopied: boolean;
+  canRegenerate: boolean;
   onToggleSpeak: () => void;
+  onCopy: () => void;
+  onRegenerate: () => void;
 }) {
   const isUser = message.role === "user";
-  const showSpeaker = !isUser && ttsSupported && message.content.trim().length > 0;
+  const hasContent = message.content.trim().length > 0;
+  const showSpeaker = !isUser && ttsSupported && hasContent;
+  const showCopy = hasContent;
+  const showRetry = !isUser && canRegenerate;
+  const actionBtnClass =
+    "rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div
+      className={`group/message flex flex-col ${
+        isUser ? "items-end" : "items-start"
+      }`}
+    >
       <div
-        className={`group/message relative max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 ${
+        className={`max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 ${
           isUser
             ? "bg-primary text-primary-foreground whitespace-pre-wrap"
             : "bg-muted text-foreground"
         }`}
       >
-        {showSpeaker && (
-          <button
-            type="button"
-            onClick={onToggleSpeak}
-            className={`absolute -right-2 -top-2 rounded-full bg-background p-1 ring-1 ring-border opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 ${
-              isSpeaking ? "opacity-100 text-primary" : "text-muted-foreground hover:text-foreground"
-            }`}
-            title={isSpeaking ? "Stop speaking" : "Read aloud"}
-            aria-label={isSpeaking ? "Stop speaking" : "Read aloud"}
-          >
-            {isSpeaking ? (
-              <VolumeOff className="size-3.5" />
-            ) : (
-              <Volume2 className="size-3.5" />
-            )}
-          </button>
-        )}
         {isUser ? (message.content || "…") : (
           <Markdown
             components={{
@@ -570,6 +688,55 @@ function Message({
           </Markdown>
         )}
       </div>
+      {(showCopy || showSpeaker || showRetry) && (
+        <div
+          className={`mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 ${
+            isCopied || isSpeaking ? "opacity-100" : ""
+          }`}
+        >
+          {showCopy && (
+            <button
+              type="button"
+              onClick={onCopy}
+              className={actionBtnClass}
+              title={isCopied ? "Copied!" : "Copy as Markdown"}
+              aria-label={isCopied ? "Copied" : "Copy as Markdown"}
+            >
+              {isCopied ? (
+                <Check className="size-3.5" />
+              ) : (
+                <Copy className="size-3.5" />
+              )}
+            </button>
+          )}
+          {showSpeaker && (
+            <button
+              type="button"
+              onClick={onToggleSpeak}
+              className={`${actionBtnClass} ${isSpeaking ? "text-primary" : ""}`}
+              title={isSpeaking ? "Stop speaking" : "Read aloud"}
+              aria-label={isSpeaking ? "Stop speaking" : "Read aloud"}
+            >
+              {isSpeaking ? (
+                <VolumeOff className="size-3.5" />
+              ) : (
+                <Volume2 className="size-3.5" />
+              )}
+            </button>
+          )}
+          {showRetry && (
+            <button
+              type="button"
+              onClick={onRegenerate}
+              className={actionBtnClass}
+              title="Regenerate response"
+              aria-label="Regenerate response"
+            >
+              <RotateCcw className="size-3.5" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
