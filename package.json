@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "dev:local": "bash scripts/dev.sh",
+    "restart": "bash scripts/restart-dev.sh",
+    "restart:status": "bash scripts/restart-dev.sh status",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

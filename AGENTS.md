@@ -2,6 +2,18 @@
 # This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
+
+# Trigger phrases (for agents)
+
+When the user says any of these, run the matching command immediately. No need to ask — these are pre-authorized.
+
+| User says… | Run | Notes |
+|---|---|---|
+| "restart dev" / "restart the dev server" | `npm run restart` | Full smart restart. Best run in background; tell user to check :3000 in ~10s. |
+| "restart dev status" / "what's running?" | `npm run restart:status` | Read-only status report. Run in foreground, summarize results. |
+| "restart [searxng / mongo / ollama / next]" | `bash scripts/restart-dev.sh <service>` | Restart just that one. |
+
+The restart sequence is designed for the laptop-sleep-recovery case: Docker containers go stale, file watchers desync, etc. See `scripts/restart-dev.sh` for the full logic.
 <!-- END:nextjs-agent-rules -->
 
 # First-time setup (run this before anything else)
