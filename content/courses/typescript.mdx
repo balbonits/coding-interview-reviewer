@@ -1,0 +1,46 @@
+---
+title: "TypeScript"
+description: "Types, generics, narrowing, utility types, and the TS-React idioms that show up in interviews."
+level: "intermediate"
+estimatedHours: 5
+tags: ["typescript", "types", "fundamentals", "interviews"]
+sections:
+  - title: "Modern TypeScript"
+    steps:
+      - kind: "note"
+        slug: "typescript-modern-features"
+        note: "Recent TS features and patterns."
+  - title: "Generics & utility types"
+    steps:
+      - kind: "exercise"
+        slug: "type-safe-pick"
+        note: "Build your own Pick — generics + mapped types."
+      - kind: "quiz"
+        topic: "TypeScript generics, conditional types, mapped types, utility types (Pick, Omit, Partial, Record, ReturnType)"
+        count: 6
+        title: "Generics & utility types quiz"
+  - title: "Narrowing & inference"
+    steps:
+      - kind: "quiz"
+        topic: "TypeScript narrowing (typeof, in, discriminated unions, user-defined type guards), inference, control-flow analysis"
+        count: 6
+        title: "Narrowing quiz"
+  - title: "TS in real code"
+    steps:
+      - kind: "exercise"
+        slug: "linked-list"
+        note: "Generic data-structure typing."
+      - kind: "exercise"
+        slug: "lru-cache"
+      - kind: "exercise"
+        slug: "tree-traversal"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "typescript"
+        title: "Mock TypeScript interview"
+---
+
+A focused TypeScript track. Generics + narrowing are where most interviews live; utility types are the table-stakes vocabulary.
+
+The exercises double as DS&A practice with real generic types — `LinkedList<T>`, `LRUCache<K, V>`, generic tree node types — so you get both at once.

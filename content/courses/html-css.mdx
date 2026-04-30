@@ -1,0 +1,52 @@
+---
+title: "HTML & CSS"
+description: "Semantic HTML, accessibility, modern CSS layout, and the pixel-perfect-yet-flexible patterns front-end interviewers ask about."
+level: "beginner"
+estimatedHours: 5
+tags: ["html", "css", "frontend", "accessibility", "fundamentals", "interviews"]
+sections:
+  - title: "Modern HTML"
+    steps:
+      - kind: "note"
+        slug: "modern-html"
+        note: "Semantic elements, landmarks, ARIA, form semantics."
+  - title: "Modern CSS"
+    steps:
+      - kind: "note"
+        slug: "modern-css"
+        note: "Cascade, specificity, layout (flexbox, grid), modern features (has, container queries, clamp)."
+      - kind: "quiz"
+        topic: "CSS layout: flexbox vs grid, when to use each, common pitfalls"
+        count: 6
+        title: "Layout quiz"
+      - kind: "quiz"
+        topic: "Modern CSS: :has(), container queries, cascade layers, custom properties, logical properties"
+        count: 5
+        title: "Modern CSS quiz"
+  - title: "Accessibility in practice"
+    steps:
+      - kind: "exercise"
+        slug: "a11y-refactor"
+        note: "Find and fix the a11y mistakes in real-looking JSX."
+      - kind: "exercise"
+        slug: "accessible-modal"
+        note: "Focus trapping, escape handling, ARIA dialog semantics."
+      - kind: "quiz"
+        topic: "Accessibility fundamentals: ARIA roles vs semantic HTML, focus management, keyboard navigation, screen readers"
+        count: 6
+        title: "Accessibility quiz"
+  - title: "Building UI"
+    steps:
+      - kind: "exercise"
+        slug: "tag-cloud"
+        note: "Lists, keys, accessible interactive elements."
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "html-css"
+        title: "Mock HTML/CSS interview"
+---
+
+The frontend foundation track. Semantic HTML and accessibility are non-negotiable for senior front-end roles — bad ARIA shows up immediately in code reviews.
+
+CSS coverage favors *modern* (`:has()`, container queries, cascade layers) — older techniques like floats and table layouts deliberately get no time.

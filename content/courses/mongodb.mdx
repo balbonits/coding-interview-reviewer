@@ -1,0 +1,42 @@
+---
+title: "MongoDB"
+description: "Document modeling, query language, aggregation, indexing, and the trade-offs vs relational."
+level: "intermediate"
+estimatedHours: 5
+tags: ["mongodb", "nosql", "database", "backend", "interviews"]
+prerequisites: []
+sections:
+  - title: "Concepts"
+    steps:
+      - kind: "note"
+        slug: "mongodb"
+        note: "Document modeling, $-operators, aggregation, indexing strategies."
+  - title: "Query language under the hood"
+    steps:
+      - kind: "exercise"
+        slug: "mongo-query-matcher"
+        note: "Implement a subset of Mongo's match logic — solidifies the operator semantics."
+      - kind: "quiz"
+        topic: "MongoDB query operators ($eq, $in, $gt, $or, $and, $regex), projection, sort, and limit"
+        count: 6
+        title: "Query language quiz"
+  - title: "Modeling & aggregation"
+    steps:
+      - kind: "quiz"
+        topic: "MongoDB document modeling: embedding vs referencing, aggregation pipeline ($match, $group, $lookup, $project)"
+        count: 6
+        title: "Modeling quiz"
+  - title: "When (and when not) to pick Mongo"
+    steps:
+      - kind: "note"
+        slug: "databases-sql-vs-nosql"
+        note: "Pair with this — interviewers love the comparison question."
+      - kind: "quiz"
+        topic: "MongoDB vs Postgres: when to pick each, sharding, transactions, JSONB"
+        count: 5
+        title: "SQL vs NoSQL quiz"
+---
+
+A practical MongoDB track. The exercise (`mongo-query-matcher`) makes the query language click in a way docs can't — you implement the matcher, so the operators stop being magic.
+
+Pair the modeling quizzes with the SQL-vs-NoSQL note to be ready for the inevitable "why Mongo over Postgres?" follow-up.

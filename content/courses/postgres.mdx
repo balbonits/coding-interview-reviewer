@@ -1,0 +1,44 @@
+---
+title: "Postgres"
+description: "SQL essentials, indexing, transactions, JSONB, and the performance gotchas interviewers love."
+level: "intermediate"
+estimatedHours: 5
+tags: ["postgres", "sql", "database", "backend", "interviews"]
+sections:
+  - title: "Cheat sheet"
+    steps:
+      - kind: "note"
+        slug: "postgres-cheat-sheet"
+        note: "Schema, CRUD, joins, indexes, JSONB, transactions, EXPLAIN."
+  - title: "Joins & aggregation"
+    steps:
+      - kind: "quiz"
+        topic: "SQL joins (INNER/LEFT/RIGHT/FULL), GROUP BY vs HAVING, window functions"
+        count: 6
+        title: "Joins & aggregation quiz"
+  - title: "Indexing & performance"
+    steps:
+      - kind: "quiz"
+        topic: "Postgres indexing: B-tree, GIN, composite indexes, leftmost-prefix rule, EXPLAIN ANALYZE"
+        count: 6
+        title: "Indexing quiz"
+      - kind: "quiz"
+        topic: "Common SQL performance pitfalls: N+1 queries, OFFSET pagination, missing FK indexes"
+        count: 5
+        title: "Performance pitfalls quiz"
+  - title: "Transactions & ACID"
+    steps:
+      - kind: "quiz"
+        topic: "ACID, transaction isolation levels (READ COMMITTED, REPEATABLE READ, SERIALIZABLE), row-level locks, SELECT FOR UPDATE"
+        count: 5
+        title: "Transactions quiz"
+  - title: "Postgres in context"
+    steps:
+      - kind: "note"
+        slug: "databases-sql-vs-nosql"
+        note: "Compare against Mongo — common interview pivot."
+---
+
+The Postgres track. Cheat sheet first to anchor the syntax, then drill the three high-frequency interview topics: joins, indexing, and transactions.
+
+Indexing is where most "the query is slow, what would you check?" interviews end up — make sure the leftmost-prefix rule is muscle memory.

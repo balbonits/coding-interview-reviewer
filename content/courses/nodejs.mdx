@@ -1,0 +1,56 @@
+---
+title: "Node.js"
+description: "ESM/CJS, the event loop, streams, async patterns, and the production-quality patterns interviewers expect."
+level: "intermediate"
+estimatedHours: 6
+tags: ["node", "backend", "javascript", "async", "interviews"]
+sections:
+  - title: "Quick reference"
+    steps:
+      - kind: "note"
+        slug: "nodejs-cheat-sheet"
+        note: "Modules, fs, http, fetch, streams, event loop — quick scan first."
+  - title: "Server-side JS deep dive"
+    steps:
+      - kind: "note"
+        slug: "node-server-side"
+        note: "Event loop internals, microtasks, streams, error handling."
+      - kind: "quiz"
+        topic: "Node.js event loop phases (timers, poll, check, close), microtasks vs macrotasks, process.nextTick vs setImmediate"
+        count: 6
+        title: "Event loop quiz"
+  - title: "Async at scale"
+    steps:
+      - kind: "exercise"
+        slug: "async-pool"
+        note: "Bounded concurrency — a real interview favorite."
+      - kind: "exercise"
+        slug: "promise-all"
+      - kind: "exercise"
+        slug: "rate-limiter"
+        note: "Token bucket / sliding window — production rate limiting."
+      - kind: "quiz"
+        topic: "Promise patterns: Promise.all vs allSettled vs race, retry-with-backoff, AbortController"
+        count: 6
+        title: "Async patterns quiz"
+  - title: "REST APIs"
+    steps:
+      - kind: "note"
+        slug: "rest-apis"
+      - kind: "exercise"
+        slug: "resilient-fetch"
+        note: "Retries, timeouts, exponential backoff — production-quality fetch."
+  - title: "Wrap-up"
+    steps:
+      - kind: "quiz"
+        topic: "Node.js scaling: cluster module, worker threads, child processes, when to reach for queues"
+        count: 5
+        title: "Scaling quiz"
+      - kind: "interview"
+        track: "general"
+        title: "Mock backend interview"
+---
+
+A working Node.js track aimed at the intersection of "understands the runtime" and "can write production-quality network code."
+
+The exercises are deliberately the production-grade ones — bounded-concurrency pools, retrying fetch, rate limiters — not the toy `console.log` versions.
