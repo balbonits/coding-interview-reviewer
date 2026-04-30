@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { streamChat, type OllamaMessage } from "@/lib/ollama";
 import {
-  INTERVIEW_TRACKS,
+  buildSystemPrompt,
+  type InterviewContext,
   type InterviewTrack,
 } from "@/lib/interviewSessions";
 
@@ -16,6 +17,7 @@ const CHARS_PER_TOKEN = 4;
 type RequestBody = {
   messages: OllamaMessage[];
   track?: InterviewTrack;
+  context?: InterviewContext;
 };
 
 export async function POST(req: NextRequest) {
@@ -29,11 +31,13 @@ export async function POST(req: NextRequest) {
     return jsonError(400, "Missing or invalid `messages` array");
   }
 
-  const preset = INTERVIEW_TRACKS[body.track ?? "javascript"]
-    ?? INTERVIEW_TRACKS.javascript;
+  const systemPrompt = buildSystemPrompt(
+    body.track ?? "javascript",
+    body.context,
+  );
 
   const fullMessages: OllamaMessage[] = [
-    { role: "system", content: preset.systemPrompt },
+    { role: "system", content: systemPrompt },
     ...trimToContextBudget(body.messages, NUM_CTX),
   ];
 

@@ -12,12 +12,21 @@ export type InterviewTrack =
   | "typescript"
   | "html-css"
   | "system-design"
-  | "general";
+  | "general"
+  | "custom";
+
+export type InterviewContext = {
+  roleTitle?: string;
+  companyName?: string;
+  jobDescription?: string;
+  notes?: string;
+};
 
 export type InterviewSession = {
   id: string;
   track: InterviewTrack;
   title?: string;
+  context?: InterviewContext;
   startedAt: number;
   endedAt: number | null;
   messages: InterviewMessage[];
@@ -37,7 +46,8 @@ const BASE_RULES = `Rules of engagement:
 - After each answer, ask a follow-up that probes a weakness, extends the idea, or pushes to a deeper "why".
 - Keep your turns short. Don't lecture. Don't dump multi-paragraph explanations of correct answers — your job is to evaluate, not teach.
 - If the candidate is wrong or vague, gently push back ("walk me through that one more time" / "what would happen if...?") instead of immediately giving the answer.
-- If the candidate explicitly asks you to stop, give a brief 3-bullet summary of strengths/gaps/recommended-next-topic and end the session.`;
+- If the candidate explicitly asks you to stop, give a brief 3-bullet summary of strengths/gaps/recommended-next-topic and end the session.
+- When a diagram would clarify a question (e.g. system design, sequence-of-events, data model, render flow), you MAY use a fenced \`\`\`mermaid block. Prefer flowchart, sequenceDiagram, and erDiagram. Keep diagrams small (≤ 10 nodes).`;
 
 export const INTERVIEW_TRACKS: Record<InterviewTrack, InterviewTrackPreset> = {
   javascript: {
@@ -137,7 +147,74 @@ Begin the interview by greeting briefly and asking your first question.`,
     kickoffPrompt:
       "Begin the interview now. Greet me briefly and ask your first front-end question.",
   },
+  custom: {
+    id: "custom",
+    label: "Custom Mock Interview",
+    description:
+      "Paste a job description or role notes — the interviewer will simulate a real interview for that role.",
+    // The real prompt is rendered from session.context via buildSystemPrompt().
+    // This fallback only fires if a custom session is created with no context.
+    systemPrompt: `You are conducting a realistic technical interview. The candidate has not provided a job description, so default to a general front-end interview.
+
+${BASE_RULES}
+
+Begin the interview now: greet the candidate, introduce yourself with a plausible name and team, do a brief small-talk warmup, then ask your first technical question.`,
+    kickoffPrompt:
+      "Begin the interview now. Greet me, introduce yourself with a plausible name and team, do a brief small-talk warmup, then move into your first technical question.",
+  },
 };
+
+/**
+ * Build the system prompt for an interview session. For most tracks this is
+ * just the static preset prompt. For the `custom` track, we render a template
+ * that splices in the candidate-supplied job description and notes so the
+ * interviewer can simulate an actual interview for that specific role.
+ */
+export function buildSystemPrompt(
+  track: InterviewTrack,
+  context?: InterviewContext,
+): string {
+  if (track === "custom") {
+    return renderCustomSystemPrompt(context ?? {});
+  }
+  return (
+    INTERVIEW_TRACKS[track]?.systemPrompt ??
+    INTERVIEW_TRACKS.javascript.systemPrompt
+  );
+}
+
+function renderCustomSystemPrompt(ctx: InterviewContext): string {
+  const role = ctx.roleTitle?.trim() || "the role described below";
+  const company = ctx.companyName?.trim();
+  const jd = ctx.jobDescription?.trim();
+  const notes = ctx.notes?.trim();
+
+  const jdBlock = jd
+    ? `JOB DESCRIPTION / BACKGROUND:\n${jd}`
+    : "JOB DESCRIPTION / BACKGROUND:\n(none provided — default to a general front-end interview, weighted toward whatever the role title implies)";
+
+  const notesBlock = notes
+    ? `\n\nADDITIONAL NOTES FROM CANDIDATE:\n${notes}`
+    : "";
+
+  return `You are conducting a realistic technical interview that emulates the experience of an actual interview at the hiring company. Your job is to give the candidate a representative dry-run for the specific role below — match the tone, pacing, and topic mix you would expect on the day.
+
+${BASE_RULES}
+
+ROLE: ${role}${company ? `\nCOMPANY: ${company}` : ""}
+
+${jdBlock}${notesBlock}
+
+Interview structure:
+- Open with a brief greeting (invent a plausible interviewer name and team) and ONE small-talk question (e.g. "what have you been working on lately?").
+- Move into 4–6 substantive technical questions chosen from the responsibilities and required skills in the JD. Mix conceptual, trade-off ("when would you reach for X vs Y?"), debugging, and short coding questions.
+- If the JD calls out specific technologies (e.g. React, GraphQL, accessibility, performance, system design), prioritize those. If the JD is sparse, default to a general front-end mix tilted toward whatever is mentioned.
+- Calibrate difficulty to the seniority implied by the title: junior → fundamentals & clarity; mid → trade-offs & idiomatic code; senior/staff → architecture, scaling, and judgment calls.
+- Toward the end, ask one behavioral / culture-fit question relevant to the role's seniority (e.g. cross-team collaboration for senior, learning velocity for junior).
+- Wrap by inviting the candidate to ask questions for you.
+
+Begin the interview now: greet the candidate, introduce yourself with a plausible name and team, and start with the small-talk opener.`;
+}
 
 export function trackLabel(track: InterviewTrack): string {
   return INTERVIEW_TRACKS[track]?.label ?? track;
@@ -161,11 +238,12 @@ export async function getSession(id: string): Promise<InterviewSession | null> {
 
 export async function createSession(
   track: InterviewTrack,
+  context?: InterviewContext,
 ): Promise<InterviewSession> {
   const res = await fetch("/api/sessions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ track }),
+    body: JSON.stringify({ track, context }),
   });
   return res.json() as Promise<InterviewSession>;
 }

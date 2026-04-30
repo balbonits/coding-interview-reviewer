@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { InlineRename } from "@/components/ui/inline-rename";
+import { Input } from "@/components/ui/input";
 import { OptionCard } from "@/components/ui/option-card";
 import { StatusPill } from "@/components/ui/status-pill";
+import { Textarea } from "@/components/ui/textarea";
 import {
   listSessions,
   createSession,
@@ -33,6 +35,7 @@ const TRACK_ORDER: InterviewTrack[] = [
   "html-css",
   "system-design",
   "general",
+  "custom",
 ];
 
 export default function InterviewLandingPage() {
@@ -40,15 +43,43 @@ export default function InterviewLandingPage() {
   const [sessions, setSessions] = useState<InterviewSession[] | null>(null);
   const [starting, setStarting] = useState<InterviewTrack | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customForm, setCustomForm] = useState({
+    roleTitle: "",
+    companyName: "",
+    jobDescription: "",
+    notes: "",
+  });
 
   useEffect(() => {
     listSessions().then(setSessions).catch(() => setSessions([]));
   }, []);
 
   async function startNew(track: InterviewTrack) {
+    if (track === "custom") {
+      setCustomOpen(true);
+      return;
+    }
     setStarting(track);
     try {
       const s = await createSession(track);
+      router.push(`/interview/${s.id}`);
+    } finally {
+      setStarting(null);
+    }
+  }
+
+  async function startCustom(e: FormEvent) {
+    e.preventDefault();
+    if (starting) return;
+    setStarting("custom");
+    try {
+      const s = await createSession("custom", {
+        roleTitle: customForm.roleTitle.trim() || undefined,
+        companyName: customForm.companyName.trim() || undefined,
+        jobDescription: customForm.jobDescription.trim() || undefined,
+        notes: customForm.notes.trim() || undefined,
+      });
       router.push(`/interview/${s.id}`);
     } finally {
       setStarting(null);
@@ -89,6 +120,14 @@ export default function InterviewLandingPage() {
           {TRACK_ORDER.map((id) => {
             const preset = INTERVIEW_TRACKS[id];
             const isStarting = starting === id;
+            const footer =
+              id === "custom"
+                ? customOpen
+                  ? "Form open below ↓"
+                  : "Bring a job description →"
+                : isStarting
+                  ? "Starting…"
+                  : null;
             return (
               <OptionCard
                 key={id}
@@ -96,7 +135,7 @@ export default function InterviewLandingPage() {
                 disabled={starting !== null}
                 title={preset.label}
                 description={preset.description}
-                footer={isStarting ? "Starting…" : null}
+                footer={footer}
               />
             );
           })}
@@ -109,6 +148,93 @@ export default function InterviewLandingPage() {
           model.
         </p>
       </section>
+
+      {customOpen && (
+        <section className="space-y-4 rounded-xl border border-border bg-card p-5">
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold">Custom Mock Interview</h3>
+            <p className="text-sm text-muted-foreground">
+              Paste the job description (or your notes about the role). The
+              interviewer will use it to simulate a real interview — small
+              talk, questions calibrated to the JD, and a wrap-up.
+            </p>
+          </div>
+          <form onSubmit={startCustom} className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm">
+                <span className="block font-medium">Role title</span>
+                <Input
+                  value={customForm.roleTitle}
+                  onChange={(e) =>
+                    setCustomForm((f) => ({ ...f, roleTitle: e.target.value }))
+                  }
+                  placeholder="Senior Front-End Engineer"
+                  required
+                />
+              </label>
+              <label className="space-y-1 text-sm">
+                <span className="block font-medium">
+                  Company{" "}
+                  <span className="text-muted-foreground">(optional)</span>
+                </span>
+                <Input
+                  value={customForm.companyName}
+                  onChange={(e) =>
+                    setCustomForm((f) => ({
+                      ...f,
+                      companyName: e.target.value,
+                    }))
+                  }
+                  placeholder="Acme Corp"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1 text-sm">
+              <span className="block font-medium">
+                Job description / background
+              </span>
+              <Textarea
+                value={customForm.jobDescription}
+                onChange={(e) =>
+                  setCustomForm((f) => ({
+                    ...f,
+                    jobDescription: e.target.value,
+                  }))
+                }
+                placeholder="Paste the full JD or a summary of the role and responsibilities…"
+                required
+                className="min-h-32"
+              />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span className="block font-medium">
+                Notes <span className="text-muted-foreground">(optional)</span>
+              </span>
+              <Textarea
+                value={customForm.notes}
+                onChange={(e) =>
+                  setCustomForm((f) => ({ ...f, notes: e.target.value }))
+                }
+                placeholder="Anything else: interviewer style, what to focus on, prior round feedback…"
+                className="min-h-20"
+              />
+            </label>
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={starting !== null}>
+                {starting === "custom" ? "Starting…" : "Start interview"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCustomOpen(false)}
+                disabled={starting !== null}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
 
       {sessions !== null && sessions.length > 0 && (
         <section className="space-y-3">

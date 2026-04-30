@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
-import type { InterviewSession, InterviewTrack } from "@/lib/interviewSessions";
+import type {
+  InterviewContext,
+  InterviewSession,
+  InterviewTrack,
+} from "@/lib/interviewSessions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +31,15 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { track } = (await req.json()) as { track: InterviewTrack };
+    const { track, context } = (await req.json()) as {
+      track: InterviewTrack;
+      context?: InterviewContext;
+    };
+    const resolvedTrack: InterviewTrack = track ?? "javascript";
     const session: InterviewSession = {
       id: crypto.randomUUID(),
-      track: track ?? "javascript",
+      track: resolvedTrack,
+      ...(resolvedTrack === "custom" && context ? { context } : {}),
       startedAt: Date.now(),
       endedAt: null,
       messages: [],

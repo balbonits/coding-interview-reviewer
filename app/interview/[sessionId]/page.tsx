@@ -11,6 +11,8 @@ import {
 import Markdown from "react-markdown";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Mic, MicOff, Volume2, VolumeOff } from "lucide-react";
+import { MermaidBlock } from "@/components/MermaidBlock";
 import { Button } from "@/components/ui/button";
 import { InlineRename } from "@/components/ui/inline-rename";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +27,17 @@ import {
   type InterviewSession,
   type InterviewMessage,
 } from "@/lib/interviewSessions";
+import {
+  cancelSpeech,
+  isSpeechRecognitionSupported,
+  isSpeechSynthesisSupported,
+  speak,
+  startRecognition,
+  stripForSpeech,
+  type RecognitionHandle,
+} from "@/lib/speech";
+
+const AUTO_SPEAK_KEY = "interview.autoSpeak";
 
 function kickoffFor(session: InterviewSession): string {
   return (
@@ -46,8 +59,93 @@ export default function InterviewSessionPage({
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [interim, setInterim] = useState("");
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [sttSupported, setSttSupported] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
+  const recognitionRef = useRef<RecognitionHandle | null>(null);
+  const autoSpeakRef = useRef(false);
+
+  useEffect(() => {
+    autoSpeakRef.current = autoSpeak;
+  }, [autoSpeak]);
+
+  useEffect(() => {
+    setSttSupported(isSpeechRecognitionSupported());
+    setTtsSupported(isSpeechSynthesisSupported());
+    try {
+      setAutoSpeak(localStorage.getItem(AUTO_SPEAK_KEY) === "1");
+    } catch {
+      // localStorage can throw in some privacy modes
+    }
+    return () => {
+      recognitionRef.current?.abort();
+      cancelSpeech();
+    };
+  }, []);
+
+  function persistAutoSpeak(next: boolean) {
+    setAutoSpeak(next);
+    try {
+      localStorage.setItem(AUTO_SPEAK_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+    if (!next) cancelSpeech();
+  }
+
+  function startListening() {
+    if (recognitionRef.current) return;
+    cancelSpeech();
+    setSpeakingIdx(null);
+    setError(null);
+    setInterim("");
+    const handle = startRecognition({
+      onInterim: (text) => setInterim(text),
+      onFinal: (text) => {
+        setInput((prev) => (prev ? `${prev.trimEnd()} ${text}` : text));
+        setInterim("");
+      },
+      onError: (err) => {
+        if (err !== "no-speech" && err !== "aborted") {
+          setError(`Microphone: ${err}`);
+        }
+      },
+      onEnd: () => {
+        recognitionRef.current = null;
+        setListening(false);
+        setInterim("");
+      },
+    });
+    if (!handle) {
+      setError("Microphone is not available in this browser.");
+      return;
+    }
+    recognitionRef.current = handle;
+    setListening(true);
+  }
+
+  function stopListening() {
+    recognitionRef.current?.stop();
+  }
+
+  function speakMessage(text: string, idx: number) {
+    if (speakingIdx === idx) {
+      cancelSpeech();
+      setSpeakingIdx(null);
+      return;
+    }
+    const ok = speak(stripForSpeech(text), {
+      onStart: () => setSpeakingIdx(idx),
+      onEnd: () => setSpeakingIdx(null),
+      onError: () => setSpeakingIdx(null),
+    });
+    if (!ok) setSpeakingIdx(null);
+  }
 
   useEffect(() => {
     getSession(sessionId).then((s) => {
@@ -98,6 +196,7 @@ export default function InterviewSessionPage({
         body: JSON.stringify({
           messages: messagesAfterUser,
           track: baseSession.track,
+          context: baseSession.context,
         }),
       });
 
@@ -153,6 +252,16 @@ export default function InterviewSessionPage({
       setSession((prev) =>
         prev ? { ...prev, messages: finalMessages } : prev,
       );
+
+      if (autoSpeakRef.current && assistantContent.trim()) {
+        const visibleIdx = finalMessages
+          .filter(
+            (m) =>
+              m.role !== "system" && m.content !== kickoffFor(baseSession),
+          )
+          .length - 1;
+        speakMessage(assistantContent, visibleIdx);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Unknown error";
       setError(msg);
@@ -168,6 +277,7 @@ export default function InterviewSessionPage({
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim() || isStreaming || !session) return;
+    if (recognitionRef.current) recognitionRef.current.stop();
     const userMessage: InterviewMessage = { role: "user", content: input.trim() };
     setInput("");
     void send([userMessage], session);
@@ -237,9 +347,58 @@ export default function InterviewSessionPage({
             )}
             <p className="text-xs text-muted-foreground">
               {trackLabel(session.track)}
+              {session.track === "custom" && session.context?.roleTitle
+                ? ` · ${session.context.roleTitle}`
+                : ""}
+              {session.track === "custom" && session.context?.companyName
+                ? ` @ ${session.context.companyName}`
+                : ""}
             </p>
+            {session.track === "custom" && session.context && (
+              <details className="mt-1 text-xs text-muted-foreground">
+                <summary className="cursor-pointer hover:text-foreground">
+                  Show role context
+                </summary>
+                <div className="mt-2 space-y-2 rounded-md border border-border bg-muted/40 p-3 whitespace-pre-wrap">
+                  {session.context.jobDescription && (
+                    <div>
+                      <span className="font-medium text-foreground">
+                        Job description
+                      </span>
+                      <p className="mt-0.5">{session.context.jobDescription}</p>
+                    </div>
+                  )}
+                  {session.context.notes && (
+                    <div>
+                      <span className="font-medium text-foreground">Notes</span>
+                      <p className="mt-0.5">{session.context.notes}</p>
+                    </div>
+                  )}
+                </div>
+              </details>
+            )}
           </div>
-          <div className="flex shrink-0 items-center gap-3 text-sm">
+          <div className="flex shrink-0 items-center gap-2 text-sm">
+            {ttsSupported && !session.endedAt && (
+              <Button
+                type="button"
+                variant={autoSpeak ? "default" : "outline"}
+                size="sm"
+                onClick={() => persistAutoSpeak(!autoSpeak)}
+                title={
+                  autoSpeak
+                    ? "Auto-speak on — click to disable"
+                    : "Auto-speak off — click to enable"
+                }
+              >
+                {autoSpeak ? (
+                  <Volume2 className="size-4" />
+                ) : (
+                  <VolumeOff className="size-4" />
+                )}
+                <span className="hidden sm:inline">Auto-speak</span>
+              </Button>
+            )}
             {session.endedAt ? (
               <span className="text-muted-foreground">Session ended</span>
             ) : (
@@ -266,7 +425,13 @@ export default function InterviewSessionPage({
           </p>
         )}
         {visibleMessages.map((m, i) => (
-          <Message key={i} message={m} />
+          <Message
+            key={i}
+            message={m}
+            ttsSupported={ttsSupported}
+            isSpeaking={speakingIdx === i}
+            onToggleSpeak={() => speakMessage(m.content, i)}
+          />
         ))}
         {isStreaming &&
           session.messages[session.messages.length - 1]?.content === "" && (
@@ -288,15 +453,44 @@ export default function InterviewSessionPage({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type your answer…"
+            placeholder={
+              listening ? "Listening — speak your answer…" : "Type your answer…"
+            }
             className="min-h-24 resize-none"
             disabled={isStreaming}
           />
-          <div className="flex items-center justify-between">
+          {listening && interim && (
+            <p className="text-xs italic text-muted-foreground">
+              <span className="mr-1 inline-block size-1.5 animate-pulse rounded-full bg-destructive align-middle" />
+              {interim}
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</p>
-            <Button type="submit" disabled={!input.trim() || isStreaming}>
-              {isStreaming ? "Streaming…" : "Send"}
-            </Button>
+            <div className="flex items-center gap-2">
+              {sttSupported && (
+                <Button
+                  type="button"
+                  variant={listening ? "default" : "outline"}
+                  size="sm"
+                  onClick={listening ? stopListening : startListening}
+                  disabled={isStreaming}
+                  title={listening ? "Stop listening" : "Speak your answer"}
+                >
+                  {listening ? (
+                    <MicOff className="size-4" />
+                  ) : (
+                    <Mic className="size-4" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {listening ? "Stop" : "Speak"}
+                  </span>
+                </Button>
+              )}
+              <Button type="submit" disabled={!input.trim() || isStreaming}>
+                {isStreaming ? "Streaming…" : "Send"}
+              </Button>
+            </div>
           </div>
         </form>
       )}
@@ -304,17 +498,45 @@ export default function InterviewSessionPage({
   );
 }
 
-function Message({ message }: { message: InterviewMessage }) {
+function Message({
+  message,
+  ttsSupported,
+  isSpeaking,
+  onToggleSpeak,
+}: {
+  message: InterviewMessage;
+  ttsSupported: boolean;
+  isSpeaking: boolean;
+  onToggleSpeak: () => void;
+}) {
   const isUser = message.role === "user";
+  const showSpeaker = !isUser && ttsSupported && message.content.trim().length > 0;
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 ${
+        className={`group/message relative max-w-[85%] rounded-lg px-4 py-2 text-sm leading-6 ${
           isUser
             ? "bg-primary text-primary-foreground whitespace-pre-wrap"
             : "bg-muted text-foreground"
         }`}
       >
+        {showSpeaker && (
+          <button
+            type="button"
+            onClick={onToggleSpeak}
+            className={`absolute -right-2 -top-2 rounded-full bg-background p-1 ring-1 ring-border opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 ${
+              isSpeaking ? "opacity-100 text-primary" : "text-muted-foreground hover:text-foreground"
+            }`}
+            title={isSpeaking ? "Stop speaking" : "Read aloud"}
+            aria-label={isSpeaking ? "Stop speaking" : "Read aloud"}
+          >
+            {isSpeaking ? (
+              <VolumeOff className="size-3.5" />
+            ) : (
+              <Volume2 className="size-3.5" />
+            )}
+          </button>
+        )}
         {isUser ? (message.content || "…") : (
           <Markdown
             components={{
@@ -328,8 +550,12 @@ function Message({ message }: { message: InterviewMessage }) {
               h2: ({ children }) => <h2 className="font-semibold mb-1">{children}</h2>,
               h3: ({ children }) => <h3 className="font-medium mb-1">{children}</h3>,
               blockquote: ({ children }) => <blockquote className="border-l-2 border-border pl-3 italic opacity-80 my-2">{children}</blockquote>,
+              pre: ({ children }) => <>{children}</>,
               code: ({ className, children, ...props }) => {
                 const isBlock = className?.startsWith("language-");
+                if (className === "language-mermaid") {
+                  return <MermaidBlock source={String(children).trim()} />;
+                }
                 return isBlock ? (
                   <pre className="bg-background/60 rounded p-3 overflow-x-auto text-xs my-2 font-mono">
                     <code {...props}>{children}</code>

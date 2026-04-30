@@ -8,6 +8,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import Markdown from "react-markdown";
+import { MermaidBlock } from "@/components/MermaidBlock";
 import { usePageContext } from "@/lib/pageContext";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -162,22 +163,29 @@ export function FloatingChat() {
                   {m.role === "assistant" ? (
                     <Markdown
                       components={{
-                        code: ({ children, ...props }) => (
-                          <code
-                            className="rounded bg-background/60 px-1 py-0.5 font-mono text-xs"
-                            {...props}
-                          >
-                            {children}
-                          </code>
-                        ),
-                        pre: ({ children, ...props }) => (
-                          <pre
-                            className="my-2 overflow-x-auto rounded bg-zinc-950 p-2 text-xs text-zinc-100"
-                            {...props}
-                          >
-                            {children}
-                          </pre>
-                        ),
+                        code: ({ className, children, ...props }) => {
+                          if (className === "language-mermaid") {
+                            return (
+                              <MermaidBlock source={String(children).trim()} />
+                            );
+                          }
+                          const isBlock = className?.startsWith("language-");
+                          return isBlock ? (
+                            <pre className="my-2 overflow-x-auto rounded bg-zinc-950 p-2 text-xs text-zinc-100">
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                          ) : (
+                            <code
+                              className="rounded bg-background/60 px-1 py-0.5 font-mono text-xs"
+                              {...props}
+                            >
+                              {children}
+                            </code>
+                          );
+                        },
+                        pre: ({ children }) => <>{children}</>,
                         p: ({ children, ...props }) => (
                           <p className="mb-1 last:mb-0" {...props}>
                             {children}
