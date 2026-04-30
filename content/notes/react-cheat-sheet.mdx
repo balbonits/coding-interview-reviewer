@@ -1,0 +1,174 @@
+---
+title: "React Cheat Sheet"
+tags: ["react", "frontend", "interviews", "cheat-sheet"]
+related: ["react-hooks"]
+---
+
+The whole React API at a glance, calibrated to what front-end interviewers actually probe. For deeper-dive hook coverage see [React Hooks](./react-hooks).
+
+## Components
+
+```jsx
+// Function component (default since 2018)
+function Button({ label, onClick }) {
+  return <button onClick={onClick}>{label}</button>;
+}
+
+// Children as a slot
+function Card({ children }) {
+  return <div className="card">{children}</div>;
+}
+```
+
+Class components still exist but are legacy. New code uses functions.
+
+## JSX gotchas
+
+- `class` → `className`, `for` → `htmlFor`
+- Attributes are camelCase: `onClick`, `tabIndex`, `aria-label` (kept as-is because of the dash)
+- Curly braces are JS expressions: `<p>{count + 1}</p>`
+- Adjacent siblings need a wrapper or fragment: `<>...</>`
+- Inline styles are objects with camelCase keys: `style={{ marginTop: 8 }}`
+
+## Rendering & re-rendering
+
+A component re-renders when:
+1. Its **state** changes (`setState` with a *different* value — React uses `Object.is` for comparison)
+2. Its **props** change
+3. Its **parent** re-renders (default; `React.memo` opts out)
+4. Its **context value** changes
+
+It does NOT re-render when a ref is mutated. That's why refs are the escape hatch for values that shouldn't trigger renders.
+
+## Conditional rendering
+
+```jsx
+{isLoading && <Spinner />}
+{user ? <Dashboard /> : <Login />}
+{items.length === 0 ? <Empty /> : items.map(...)}
+```
+
+Watch out: `0 && <X/>` renders `0`. Use `Boolean(items.length)` or `items.length > 0`.
+
+## Lists & keys
+
+```jsx
+{items.map((item) => <Row key={item.id} item={item} />)}
+```
+
+`key` must be **stable, unique among siblings, and not the array index** if items reorder. Wrong keys → React reuses DOM nodes for the wrong item, causing form-state bleed and animation glitches.
+
+## Events
+
+```jsx
+<button onClick={(e) => { e.stopPropagation(); save(); }}>Save</button>
+<form onSubmit={(e) => { e.preventDefault(); /* ... */ }}>
+```
+
+React events are synthetic — they bubble through React's event system, not the DOM directly. As of React 17+, they attach to the root, not `document`.
+
+## Forms — controlled vs uncontrolled
+
+```jsx
+// Controlled — state is the source of truth
+<input value={name} onChange={(e) => setName(e.target.value)} />
+
+// Uncontrolled — DOM owns the value, you read on submit via ref
+<input ref={inputRef} defaultValue="" />
+inputRef.current.value
+```
+
+Default to controlled. Reach for uncontrolled for performance (huge forms) or when interop with non-React code.
+
+## Lifting state up
+
+When two siblings need the same state, move it to their nearest common parent and pass down via props. If you're prop-drilling 4+ levels, reach for context (or external store).
+
+## Context
+
+```jsx
+const ThemeContext = createContext("light");
+
+<ThemeContext.Provider value={theme}>{children}</ThemeContext.Provider>
+
+function Btn() { const t = useContext(ThemeContext); }
+```
+
+**Performance note:** every consumer re-renders when the value's reference changes. Don't put rapidly-changing values (e.g. mouse position) in context. Memoize the value object: `useMemo(() => ({ a, b }), [a, b])`.
+
+## Memoization
+
+| Tool | What it caches | When to reach for it |
+|---|---|---|
+| `React.memo(Cmp)` | A component's render | Cmp re-renders too often with the same props |
+| `useMemo(() => x, [deps])` | A computed value | The computation is expensive |
+| `useCallback(fn, [deps])` | A function reference | Fn is passed to a memoized child |
+
+Default to NOT memoizing. Add only when you've measured a problem. Each one has a cost.
+
+## Refs
+
+```jsx
+const ref = useRef(null);
+<input ref={ref} />              // DOM node access
+ref.current?.focus();
+```
+
+For forwarding refs to a child component:
+
+```jsx
+const FancyInput = forwardRef((props, ref) => <input ref={ref} {...props} />);
+```
+
+(React 19 deprecates `forwardRef` for function components — `ref` is now a normal prop.)
+
+## Server vs Client components (Next.js / React 19)
+
+```jsx
+// Server (default in Next App Router) — runs on the server, no JS shipped
+async function Page() {
+  const data = await db.query();
+  return <div>{data.title}</div>;
+}
+
+// Client — runs in the browser; needs interactivity
+"use client";
+function Counter() { const [n, setN] = useState(0); /* ... */ }
+```
+
+Server components: free DB access, no hooks, can't `useState` / `useEffect` / event handlers. Client components: standard React, ship JS to the browser.
+
+Boundary rule: a server component can render a client component (passes serializable props), but a client component can't render a server component as a child *except* by passing it as `children`.
+
+## Suspense & error boundaries
+
+```jsx
+<ErrorBoundary fallback={<Err />}>
+  <Suspense fallback={<Spinner />}>
+    <UserProfile />     {/* may throw a Promise while loading */}
+  </Suspense>
+</ErrorBoundary>
+```
+
+Suspense catches thrown Promises and shows the fallback until they resolve. Error boundaries catch render-time errors. Note: error boundaries are still class components — there's no `useErrorBoundary` (yet).
+
+## React 19 additions you should mention
+
+- **`use(promise)` / `use(context)`** — the only hook that can be called conditionally; reads a promise value (with Suspense) or context.
+- **Actions** — async event handlers wired to forms/transitions. Pair with `useActionState`, `useFormStatus`, `useOptimistic`.
+- **`ref` as a prop** — no more `forwardRef` boilerplate.
+- **Document metadata** — render `<title>`, `<meta>`, `<link>` directly inside any component; React hoists them.
+
+## Common interview pitfalls
+
+- **Stale closures in effects** — capturing an old `count` value. Fix: dependency array, or `setCount(c => c + 1)`.
+- **Infinite render loops** — calling `setState` during render, or having a missing/wrong `useEffect` dep array.
+- **Direct mutation of state** — `arr.push(x)` then `setArr(arr)` doesn't re-render (same reference). Always copy: `setArr([...arr, x])`.
+- **Missing keys** in lists, or `key={index}` when the list reorders.
+- **Treating context as a state library** — fine for theme/locale/auth; bad for high-frequency updates.
+
+## Mental models worth keeping
+
+- React is "UI = f(state)". A re-render computes new VDOM; the reconciler diffs and patches the DOM.
+- Effects are *not* lifecycle hooks. They synchronize external systems with state.
+- Hooks are called in order on every render. That's why they can't be conditional.

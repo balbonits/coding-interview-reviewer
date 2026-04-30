@@ -1,0 +1,259 @@
+---
+title: "Node.js Cheat Sheet"
+tags: ["node", "javascript", "backend", "interviews", "cheat-sheet"]
+related: ["node-server-side", "rest-apis"]
+---
+
+A working reference for the Node.js you actually use day-to-day. For the deep-dive on event loop, streams, and async internals, see [Node.js (server-side)](./node-server-side).
+
+## Modules — ESM vs CommonJS
+
+```js
+// ESM (modern, the default in package.json with "type": "module")
+import { readFile } from "node:fs/promises";
+export const greet = (name) => `Hi ${name}`;
+export default function main() {}
+```
+
+```js
+// CommonJS (legacy, but still everywhere)
+const fs = require("node:fs/promises");
+module.exports = { greet };
+```
+
+Use ESM in new projects. Mix only when forced — `import()` works in CJS; CJS in ESM only via `createRequire`.
+
+The `node:` prefix is the modern way to disambiguate built-ins from npm packages of the same name.
+
+## Filesystem (promise API)
+
+```js
+import {
+  readFile, writeFile, readdir, stat, mkdir, rm, rename
+} from "node:fs/promises";
+
+const text = await readFile("./input.txt", "utf8");
+await writeFile("./out.txt", text.toUpperCase());
+
+const entries = await readdir("./src", { withFileTypes: true });
+for (const e of entries) {
+  if (e.isDirectory()) console.log("dir:", e.name);
+}
+
+await mkdir("./build", { recursive: true });
+await rm("./build", { recursive: true, force: true });
+```
+
+For huge files, use streams (below) — `readFile` loads the whole thing into memory.
+
+## HTTP (built-in, no framework)
+
+```js
+import http from "node:http";
+
+const server = http.createServer(async (req, res) => {
+  if (req.url === "/health") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+  res.writeHead(404).end();
+});
+
+server.listen(3000, () => console.log("up"));
+```
+
+Real apps usually reach for Express / Fastify / Hono — but knowing the bare API matters in interviews.
+
+## fetch (built-in since Node 18)
+
+```js
+const r = await fetch("https://api.example.com/users/1", {
+  headers: { Authorization: `Bearer ${token}` },
+});
+if (!r.ok) throw new Error(`HTTP ${r.status}`);
+const data = await r.json();
+```
+
+No more `node-fetch`. Same API as the browser.
+
+## Process & env
+
+```js
+process.env.DATABASE_URL;
+process.argv;            // ["node", "/path/to/script.js", ...args]
+process.exit(1);
+
+process.on("SIGTERM", () => server.close(() => process.exit(0)));
+process.on("uncaughtException", (err) => { /* log + crash hard */ });
+process.on("unhandledRejection", (err) => { /* same */ });
+```
+
+Always handle `SIGTERM` for graceful shutdown — Kubernetes, Docker, Heroku, etc. all send it before killing the process.
+
+## Streams — when files are too big to fit in RAM
+
+```js
+import { createReadStream, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { createGzip } from "node:zlib";
+
+await pipeline(
+  createReadStream("input.txt"),
+  createGzip(),
+  createWriteStream("input.txt.gz"),
+);
+```
+
+Streams are the answer to "how would you handle a 10 GB file?" Reading and writing in chunks keeps memory bounded.
+
+Async iterators give you a cleaner read loop:
+
+```js
+for await (const chunk of createReadStream("big.log", "utf8")) {
+  process(chunk);
+}
+```
+
+## Path & URL
+
+```js
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// __dirname doesn't exist in ESM — derive it:
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+path.join(__dirname, "data", "users.json");
+path.resolve("./relative/path");
+path.extname("/x/y.tar.gz");        // ".gz"
+```
+
+## Async patterns
+
+```js
+// Sequential
+for (const url of urls) {
+  const r = await fetch(url);
+  await save(r);
+}
+
+// Concurrent (all at once — risky for many)
+const results = await Promise.all(urls.map((u) => fetch(u)));
+
+// Bounded concurrency — common interview question
+async function pool(items, size, fn) {
+  const out = [];
+  const inFlight = new Set();
+  for (const item of items) {
+    const p = Promise.resolve(fn(item)).finally(() => inFlight.delete(p));
+    inFlight.add(p);
+    out.push(p);
+    if (inFlight.size >= size) await Promise.race(inFlight);
+  }
+  return Promise.all(out);
+}
+
+await pool(urls, 5, fetch);   // never more than 5 concurrent
+```
+
+`Promise.allSettled` is your friend when you don't want one failure to abort the batch.
+
+## Event loop (the question every Node interview asks)
+
+Phases run in this order, each draining its queue before moving on:
+
+1. **timers** — `setTimeout`, `setInterval` callbacks
+2. **pending callbacks** — deferred I/O callbacks
+3. **idle, prepare** — internal
+4. **poll** — fetches new I/O events; executes I/O callbacks
+5. **check** — `setImmediate` callbacks
+6. **close callbacks** — `socket.on('close')` etc.
+
+Microtasks (Promise `.then`, `queueMicrotask`) drain **between every phase, after every individual callback**. They jump the line.
+
+Quick mnemonic: `setImmediate` runs after I/O in the same tick; `setTimeout(cb, 0)` runs in the next tick.
+
+```js
+console.log("a");
+setTimeout(() => console.log("timeout"), 0);
+setImmediate(() => console.log("immediate"));
+Promise.resolve().then(() => console.log("microtask"));
+console.log("b");
+// a, b, microtask, then [timeout|immediate] in OS-dependent order
+```
+
+## CPU-bound work — workers
+
+JavaScript is single-threaded; long synchronous work blocks the event loop. For CPU-heavy tasks:
+
+```js
+import { Worker } from "node:worker_threads";
+
+const w = new Worker("./hash-worker.js");
+w.postMessage({ data: huge });
+w.on("message", (result) => { /* ... */ });
+```
+
+In a web app, also consider offloading to a queue + worker process (BullMQ, Sidekiq-style) instead of in-process workers.
+
+## Child processes
+
+```js
+import { spawn, exec } from "node:child_process";
+
+// Streamed output (good for long-running)
+const ls = spawn("ls", ["-la"]);
+ls.stdout.on("data", (chunk) => console.log(chunk.toString()));
+ls.on("close", (code) => console.log("done", code));
+
+// Buffered output (good for short commands)
+exec("git rev-parse HEAD", (err, stdout) => console.log(stdout.trim()));
+```
+
+## Crypto basics
+
+```js
+import crypto from "node:crypto";
+
+const id = crypto.randomUUID();                                  // RFC 4122 v4
+const hash = crypto.createHash("sha256").update("hi").digest("hex");
+const hmac = crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+
+// Constant-time comparison (use this for secrets, NOT === )
+crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+```
+
+For passwords specifically: `argon2` or `bcrypt`. Never plain SHA.
+
+## Testing
+
+```js
+// node:test is built-in (since Node 20)
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+test("adds", () => {
+  assert.equal(1 + 1, 2);
+});
+```
+
+Run with `node --test`. For richer ergonomics most teams still use Vitest or Jest.
+
+## Useful CLI flags
+
+```bash
+node --watch server.js              # auto-reload on file change (Node 18+)
+node --inspect server.js            # debugger; chrome://inspect
+node --env-file=.env server.js      # load .env (Node 20.6+)
+node --experimental-strip-types script.ts   # run TS directly (Node 22+)
+```
+
+## Likely interview questions
+
+- "What is the event loop and why does it matter?" → see above.
+- "What's the difference between `process.nextTick` and `setImmediate`?" → `nextTick` runs *before* the next phase, after the current op. `setImmediate` runs in the **check** phase. `nextTick` can starve I/O if abused.
+- "Streams vs buffering an entire file?" → streams keep memory bounded; buffering is simpler but breaks at scale.
+- "How do you scale Node?" → cluster module, horizontal processes behind a load balancer (each is single-threaded), worker threads for CPU-bound, queues + workers for long jobs.
+- "What's `npm ci` vs `npm install`?" → `ci` does a clean install from `package-lock.json` and fails if it would diverge. Use `ci` in CI; `install` in dev.

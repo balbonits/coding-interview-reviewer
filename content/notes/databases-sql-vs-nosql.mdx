@@ -1,0 +1,129 @@
+---
+title: "Databases: SQL vs NoSQL"
+tags: ["database", "sql", "nosql", "postgres", "mongodb", "system-design", "interviews"]
+related: ["postgres-cheat-sheet", "mongodb"]
+---
+
+The "SQL vs NoSQL" framing is older than most of your projects and oversimplified — but it's still the question interviewers ask. The honest answer: pick the database whose strengths line up with your data shape and access patterns, not the one with the cooler logo.
+
+## The real divide
+
+The historical pitch was *schema vs schemaless*. That's not the divide anymore — Postgres has `JSONB`, Mongo has schema validation. The actual axes that matter:
+
+| Axis | Relational (SQL) | Document (Mongo) | Key-value (Redis) | Wide-column (Cassandra) |
+|---|---|---|---|---|
+| Data shape | Tabular, normalized | Nested objects | Opaque blobs by key | Wide rows, time-series |
+| Query language | SQL — declarative, joins | Query DSL or aggregation pipelines | GET/SET (+ data structures) | CQL, partition-key oriented |
+| Joins | First-class | Awkward (`$lookup`, embedding) | None | None |
+| Transactions | Strong, multi-row, ACID | Multi-doc available, less common | Limited (MULTI/EXEC) | Eventual consistency by default |
+| Horizontal scaling | Hard (sharding is manual) | Easier (built-in sharding) | Easy | Excellent |
+| Schema | Enforced | Optional | None | Per-row flexibility |
+
+Real apps mix these: Postgres as the source of truth, Redis for caching/sessions, an object store for blobs.
+
+## The CAP framing (one slide of theory)
+
+Brewer's theorem says a distributed data store can have at most **two of three**: Consistency, Availability, Partition tolerance. In practice, partition tolerance is non-negotiable on real networks, so the trade is between consistency and availability:
+
+- **CP** (consistency + partition tolerance): refuses writes during partitions to stay correct. Postgres in synchronous-replication mode, MongoDB by default.
+- **AP** (availability + partition tolerance): accepts writes during partitions, reconciles later. Cassandra, Dynamo, eventually-consistent S3.
+
+You'll be asked to pick. The right answer depends on what you can't tolerate: stale data or downtime.
+
+## When to reach for SQL
+
+- **Your data has clear relationships** — users have orders, orders have line items, line items belong to products. Joins exist for a reason.
+- **You need transactions across multiple things at once** — money transfers, inventory holds, multi-step business workflows.
+- **You'll write reports / analytics** — `GROUP BY`, window functions, CTEs make ad-hoc analysis tractable.
+- **You want strong constraints** — referential integrity, NOT NULL, CHECK constraints catch bugs at the DB layer.
+- **You don't know what queries you'll run later** — SQL's declarative-ness pays off when access patterns change.
+
+Default choice: **Postgres**. See the [Postgres cheat sheet](./postgres-cheat-sheet) for the working details.
+
+## When to reach for document (Mongo / DynamoDB)
+
+- **Your data is naturally nested** — a CMS document, an event payload, a user-profile blob with arrays of arrays.
+- **Schema evolves fast** — new fields land weekly and you don't want a migration for each.
+- **You access primarily by primary key + a known shape**, not via complex joins.
+- **You need to scale writes horizontally with minimal ops** — built-in sharding helps.
+
+Watch out: people pick Mongo expecting Postgres-flexibility-with-no-migrations and discover a year later they're writing painful `$lookup` pipelines to re-implement joins they should never have lost.
+
+## When to reach for key-value (Redis)
+
+Not really a primary database — a complement. Use for:
+- **Caching** — read-heavy data with TTLs (`SETEX user:42 60 ...`)
+- **Sessions** — fast lookup, automatic expiry
+- **Rate limiting** — `INCR + EXPIRE` over a per-user key
+- **Pub/sub & queues** — Redis Streams, BullMQ
+- **Leaderboards** — sorted sets (`ZADD`, `ZRANGE`)
+
+In-memory means it's fast and lossy. Persist if you care about durability, but do not put your only copy of important data in Redis alone.
+
+## Indexing — the universal performance answer
+
+Whichever database you pick, the next interview question is *"the query's slow, what would you check?"* Almost always: indexes.
+
+```sql
+-- Postgres: B-tree by default; GIN for JSONB / arrays / full-text
+CREATE INDEX idx_orders_user_created ON orders(user_id, created_at DESC);
+```
+
+```js
+// MongoDB: similar concept, different syntax
+db.orders.createIndex({ userId: 1, createdAt: -1 });
+```
+
+Universal rules:
+- Index every foreign-key / lookup column.
+- Composite indexes follow leftmost-prefix order — get the order right.
+- Cover the query: include the columns the query reads, so the index alone answers it.
+- Never index everything — writes get slower, disk gets fatter.
+- Use `EXPLAIN` (or Mongo's `.explain()`) before and after.
+
+## Transactions & ACID
+
+ACID is the four guarantees relational databases have provided for decades:
+
+- **A**tomicity — all-or-nothing commits.
+- **C**onsistency — the DB never violates its constraints.
+- **I**solation — concurrent transactions don't see each other's intermediate state.
+- **D**urability — committed data survives a crash.
+
+Mongo added multi-document transactions in 4.0 (2018); they exist but are slower than single-doc writes. Cassandra and most "AP" systems explicitly trade away strict ACID for availability + scale.
+
+If your domain has money, inventory, or any "two things must change together," start with an ACID database.
+
+## Common scaling moves
+
+| Strategy | What it does | When |
+|---|---|---|
+| Vertical scaling | Bigger box (more CPU/RAM/disk) | First move. Cheap, fast, no architecture change. |
+| Read replicas | Async replicas serve reads | Read-heavy workloads, OK with stale reads |
+| Caching | Front the DB with Redis / CDN | Hot keys, repeated reads |
+| Connection pooling | PgBouncer in front of Postgres | When app servers exhaust DB connections |
+| Sharding | Split data across nodes by key | Last resort. Hard, irreversible, breaks joins. |
+| CQRS | Split read & write models | Reads have very different needs from writes |
+
+Don't shard until you have to. Most apps that "need NoSQL for scale" actually need an index, a cache, and a connection pooler.
+
+## Choosing flow for a typical web app
+
+```
+Is your data relational and you'll need joins / transactions?
+  └─ Yes → Postgres (default)
+  └─ No: is the data nested + schema-shifting + access-by-key?
+        └─ Yes → MongoDB or DynamoDB
+        └─ No: is it ephemeral / cache / counter / queue?
+              └─ Yes → Redis (alongside another store)
+              └─ No: extreme write scale, time-series?
+                    └─ Yes → Cassandra / ScyllaDB / TimescaleDB
+```
+
+## Likely interview questions
+
+- "Why pick Postgres over Mongo for an e-commerce app?" — joins (orders × items × products), transactions (inventory holds), constraints (NOT NULL on price), reporting.
+- "When does Mongo win?" — content systems with nested docs, event/log data, schema-flexible product catalogs, single-doc-by-key access.
+- "How would you scale a read-heavy Postgres app?" — measure, add indexes, add read replicas, add a Redis cache for hot keys, then consider partitioning.
+- "Walk me through indexing a slow query." — `EXPLAIN ANALYZE`, identify Seq Scan, find selective predicate, consider composite + leftmost-prefix, verify with EXPLAIN again.
+- "What's eventual consistency and when is it OK?" — replicas converge over time; OK for likes/views/non-critical reads; not OK for balances or stock counts.

@@ -1,0 +1,201 @@
+---
+title: "Postgres Intro & Cheat Sheet"
+tags: ["postgres", "sql", "database", "backend", "interviews", "cheat-sheet"]
+related: ["databases-sql-vs-nosql", "rest-apis"]
+---
+
+Postgres is the open-source relational database that interviewers default to when they say "let's talk about your data layer." It's strict about types, ACID-compliant, and has shipped a JSON column type good enough that "schemaless when I need it" is a real answer too. This is a working reference, not an exhaustive manual.
+
+## Connection & basics
+
+```bash
+psql "postgresql://user:password@localhost:5432/mydb"
+
+\l              -- list databases
+\c mydb         -- connect to db
+\dt             -- list tables
+\d users        -- describe a table
+\q              -- quit
+```
+
+## Schema essentials
+
+```sql
+CREATE TABLE users (
+  id          SERIAL PRIMARY KEY,            -- auto-incrementing int
+  email       TEXT NOT NULL UNIQUE,
+  name        TEXT,
+  age         INT CHECK (age >= 0),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE posts (
+  id        BIGSERIAL PRIMARY KEY,
+  user_id   INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title     TEXT NOT NULL,
+  body      TEXT,
+  tags      TEXT[],                          -- arrays are first-class
+  metadata  JSONB,                           -- queryable, indexable JSON
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+Use `BIGSERIAL` for anything that might exceed 2 billion rows. Use `TIMESTAMPTZ` not `TIMESTAMP` (the former tracks UTC offset and avoids "what timezone is this" headaches).
+
+## CRUD basics
+
+```sql
+-- INSERT
+INSERT INTO users (email, name) VALUES ('a@example.com', 'Alice');
+
+-- INSERT with returning (very useful — get the auto-generated id back)
+INSERT INTO users (email, name) VALUES ('b@example.com', 'Bob')
+RETURNING id, created_at;
+
+-- UPDATE
+UPDATE users SET name = 'Alicia', updated_at = NOW() WHERE id = 1;
+
+-- DELETE
+DELETE FROM users WHERE id = 1;
+
+-- UPSERT (ON CONFLICT — "INSERT or UPDATE")
+INSERT INTO users (email, name) VALUES ('a@example.com', 'Alice 2')
+ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name;
+```
+
+## SELECT — the bread and butter
+
+```sql
+-- Joins
+SELECT u.name, p.title
+FROM users u
+JOIN posts p ON p.user_id = u.id
+WHERE u.created_at > NOW() - INTERVAL '30 days';
+
+-- Aggregation
+SELECT user_id, COUNT(*) AS post_count, MAX(created_at) AS latest
+FROM posts
+GROUP BY user_id
+HAVING COUNT(*) > 5
+ORDER BY post_count DESC
+LIMIT 10;
+
+-- Window functions (run aggregates without collapsing rows)
+SELECT
+  user_id, title, created_at,
+  ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
+FROM posts;
+-- Use rn = 1 to get the latest post per user
+```
+
+## Joins, in plain words
+
+| Join | Returns |
+|---|---|
+| `INNER JOIN` | Rows present in both tables |
+| `LEFT JOIN` | All rows from the left + matches from the right (NULL if no match) |
+| `RIGHT JOIN` | Mirror of LEFT |
+| `FULL OUTER JOIN` | All rows from both sides |
+| `CROSS JOIN` | Cartesian product (every row × every row) — rarely intentional |
+
+## Indexes — the most likely follow-up question
+
+```sql
+CREATE INDEX idx_posts_user_id ON posts(user_id);                  -- B-tree, default
+CREATE INDEX idx_posts_metadata ON posts USING GIN (metadata);     -- for JSONB queries
+CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email)); -- expression index
+```
+
+Rules of thumb:
+- Add an index on every foreign-key column. Postgres does NOT do this automatically.
+- Index columns used in `WHERE`, `JOIN`, and `ORDER BY` clauses on hot queries.
+- Composite indexes follow leftmost-prefix rules: `(a, b, c)` helps `WHERE a=?`, `WHERE a=? AND b=?`, but NOT `WHERE b=?` alone.
+- Indexes cost write throughput and disk space. Don't index everything.
+
+```sql
+-- See what the planner actually does
+EXPLAIN ANALYZE
+SELECT * FROM posts WHERE user_id = 42;
+```
+
+`Seq Scan` on a large table is a red flag. `Index Scan` or `Bitmap Index Scan` is the goal.
+
+## Transactions
+
+```sql
+BEGIN;
+UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+COMMIT;
+-- ROLLBACK; if anything went wrong
+```
+
+ACID = Atomicity, Consistency, Isolation, Durability. Postgres defaults to `READ COMMITTED` isolation; bump to `REPEATABLE READ` or `SERIALIZABLE` for stricter guarantees at the cost of more retries.
+
+## JSON / JSONB
+
+```sql
+INSERT INTO posts (title, metadata) VALUES (
+  'Hello',
+  '{"author": "Alice", "views": 0, "tags": ["intro", "demo"]}'
+);
+
+-- Read fields
+SELECT metadata->>'author' AS author, metadata->'views' FROM posts;
+
+-- Filter (and use a GIN index for speed)
+SELECT * FROM posts WHERE metadata @> '{"author": "Alice"}';
+```
+
+`JSONB` is binary, indexable, faster to query. `JSON` is plain text — only useful if you must preserve key order / whitespace.
+
+## Useful built-ins
+
+```sql
+-- Date math
+SELECT NOW(), NOW() - INTERVAL '7 days', AGE(birth_date);
+
+-- Strings
+SELECT LOWER(email), LENGTH(name), name ILIKE '%alic%';
+
+-- Arrays
+SELECT * FROM posts WHERE 'react' = ANY(tags);
+SELECT array_agg(title) FROM posts WHERE user_id = 1;
+
+-- Conditional
+SELECT name, CASE WHEN age >= 18 THEN 'adult' ELSE 'minor' END AS bracket FROM users;
+
+-- Generate series (test data, calendar tables)
+SELECT generate_series(1, 100);
+SELECT generate_series('2026-01-01'::date, '2026-12-31'::date, '1 day');
+```
+
+## Migrations
+
+Use a migration tool (Knex, Prisma, Flyway, sqlx, Drizzle) — never hand-edit production schemas. Each migration is a forward + rollback pair, version-controlled.
+
+```sql
+-- Common patterns
+ALTER TABLE users ADD COLUMN age INT;
+ALTER TABLE users ALTER COLUMN email TYPE VARCHAR(320);
+ALTER TABLE users RENAME COLUMN name TO full_name;
+ALTER TABLE users DROP COLUMN age;
+
+CREATE INDEX CONCURRENTLY idx_x ON tbl(col);   -- doesn't lock writes; do this in prod
+```
+
+## Performance gotchas (interview gold)
+
+- **N+1 queries** — fetching a list and then querying once per row inside a loop. Fix: a single JOIN, or `WHERE id = ANY($1)`.
+- **`SELECT *`** — bad for query plans (wide rows, breaks covering indexes).
+- **Missing indexes on FKs** — every FK should have an index unless you've measured otherwise.
+- **`OFFSET 1000000`** — paginating with `OFFSET` past a few thousand rows is slow. Use keyset pagination: `WHERE id < last_seen_id ORDER BY id DESC LIMIT 50`.
+- **Long-running transactions** — they hold locks and bloat MVCC visibility. Keep transactions short.
+
+## Likely interview questions
+
+- "What's the difference between `WHERE` and `HAVING`?" (`WHERE` filters rows before aggregation; `HAVING` filters groups after.)
+- "How does Postgres handle concurrent writes to the same row?" (Row-level locks. Concurrent writers wait. `SELECT ... FOR UPDATE` reserves the row.)
+- "Postgres vs MySQL?" (Postgres: stricter typing, better JSON, richer features. MySQL: a bit faster on simple read-heavy workloads, more permissive defaults.)
+- "Vertical vs horizontal scaling?" (Vertical: bigger box. Horizontal: read replicas, partitioning, eventually sharding. Postgres is famously good at vertical, harder to shard than NoSQL options.)

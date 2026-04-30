@@ -1,0 +1,216 @@
+---
+title: "Redux & Zustand Cheat Sheet"
+tags: ["react", "state-management", "redux", "zustand", "interviews", "cheat-sheet"]
+related: ["react-cheat-sheet", "react-hooks"]
+---
+
+The two state-management libraries you'll be asked to compare. Both solve "how do I share state across distant components without prop-drilling" — they just disagree on how much ceremony to charge for it.
+
+## When to reach for either
+
+You probably don't need either if:
+- Your state is local to one screen → `useState`
+- You need theme / auth / locale → `useContext`
+- You need server data → React Query / SWR / RSC
+
+You DO want a real store when:
+- Many components, far apart in the tree, read/write the same state
+- You want time-travel debugging or strict update boundaries
+- You need cross-cutting middleware (logging, persistence, undo)
+
+## Side-by-side
+
+|  | Redux Toolkit | Zustand |
+|---|---|---|
+| Mental model | Reducers + actions + dispatch | Plain JS function returning state + setters |
+| Boilerplate | Modest (since RTK) | Near-zero |
+| DevTools | Excellent (time-travel, action log) | Good (works with Redux DevTools extension) |
+| Re-render control | Selectors, with `createSelector` for memoization | Selector arg + automatic shallow-equal check |
+| Async | `createAsyncThunk` or RTK Query | Just call `await` inside an action |
+| Bundle size | ~13 KB (RTK) | ~1 KB |
+| Best for | Large apps, big teams, established conventions | Smaller apps, fast iteration, less ceremony |
+
+Neither is *wrong*. Bigger codebases benefit from Redux's enforced structure; smaller ones drown in it.
+
+## Redux Toolkit (the modern Redux)
+
+```ts
+// store/cartSlice.ts
+import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+
+type Item = { id: string; qty: number };
+
+const cartSlice = createSlice({
+  name: "cart",
+  initialState: { items: [] as Item[] },
+  reducers: {
+    add: (state, action: PayloadAction<Item>) => {
+      // Immer lets you "mutate" — produces a new immutable state under the hood
+      const existing = state.items.find((i) => i.id === action.payload.id);
+      if (existing) existing.qty += action.payload.qty;
+      else state.items.push(action.payload);
+    },
+    remove: (state, action: PayloadAction<string>) => {
+      state.items = state.items.filter((i) => i.id !== action.payload);
+    },
+  },
+});
+
+export const { add, remove } = cartSlice.actions;
+export default cartSlice.reducer;
+```
+
+```ts
+// store/index.ts
+import { configureStore } from "@reduxjs/toolkit";
+import cart from "./cartSlice";
+
+export const store = configureStore({ reducer: { cart } });
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
+```
+
+```tsx
+// in a component
+import { useSelector, useDispatch } from "react-redux";
+
+const items = useSelector((s: RootState) => s.cart.items);
+const dispatch = useDispatch<AppDispatch>();
+dispatch(add({ id: "a", qty: 1 }));
+```
+
+### Async with RTK Query
+
+```ts
+// the data-fetching layer that comes with RTK
+const api = createApi({
+  baseQuery: fetchBaseQuery({ baseUrl: "/api/" }),
+  endpoints: (b) => ({
+    getUser: b.query<User, string>({ query: (id) => `users/${id}` }),
+  }),
+});
+
+const { data, isLoading } = api.useGetUserQuery("123");
+```
+
+RTK Query gives you caching, request dedup, and invalidation. For most apps it removes the need to write your own thunks.
+
+### Redux gotchas
+
+- **Don't mutate state outside Immer-powered reducers.** `state.items.push(...)` only works inside `createSlice` reducers because Immer wraps them. Outside that scope, treat state as immutable.
+- **Selectors that return new references re-render every dispatch.** `s => s.items.filter(...)` creates a new array each call. Use `createSelector` from `reselect` to memoize.
+- **One global store, with feature slices.** Don't create multiple stores.
+
+## Zustand
+
+```ts
+// store/useCart.ts
+import { create } from "zustand";
+
+type Item = { id: string; qty: number };
+type CartState = {
+  items: Item[];
+  add: (item: Item) => void;
+  remove: (id: string) => void;
+};
+
+export const useCart = create<CartState>((set) => ({
+  items: [],
+  add: (item) =>
+    set((state) => {
+      const existing = state.items.find((i) => i.id === item.id);
+      if (existing) {
+        return {
+          items: state.items.map((i) =>
+            i.id === item.id ? { ...i, qty: i.qty + item.qty } : i,
+          ),
+        };
+      }
+      return { items: [...state.items, item] };
+    }),
+  remove: (id) =>
+    set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
+}));
+```
+
+```tsx
+// in a component — the selector argument scopes the subscription
+const items = useCart((s) => s.items);
+const add = useCart((s) => s.add);
+add({ id: "a", qty: 1 });
+```
+
+### Re-render control
+
+```tsx
+// Subscribes only to s.items.length — re-renders only when that number changes
+const count = useCart((s) => s.items.length);
+
+// Picking multiple values? Use shallow comparator to avoid renders on
+// equal-by-value but new-reference returns.
+import { useShallow } from "zustand/react/shallow";
+const { items, add } = useCart(useShallow((s) => ({ items: s.items, add: s.add })));
+```
+
+### Async — just write it
+
+```ts
+const useUser = create((set) => ({
+  user: null,
+  loading: false,
+  error: null,
+  fetch: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const r = await fetch(`/api/users/${id}`);
+      set({ user: await r.json(), loading: false });
+    } catch (e) {
+      set({ error: e.message, loading: false });
+    }
+  },
+}));
+```
+
+No middleware, no thunks. Just an async function that calls `set`.
+
+### Middleware
+
+```ts
+import { create } from "zustand";
+import { persist, devtools } from "zustand/middleware";
+
+const useStore = create(
+  devtools(
+    persist((set) => ({ /* state */ }), { name: "app-storage" }),
+  ),
+);
+```
+
+`persist` mirrors to localStorage. `devtools` plugs into Redux DevTools. `immer` brings Immer's "draft" pattern if you miss it.
+
+### Zustand gotchas
+
+- **Selectors must be stable** — a new function each render means each render re-subscribes. Either define them outside the component or rely on Zustand's `useShallow`.
+- **No dispatch batching across stores.** Two `set` calls = two re-renders unless the store batches them in one function.
+- **No Provider by default.** State is module-singleton. For SSR / per-request stores, wrap with the `createStore` + Context pattern.
+
+## Quick decision flow
+
+```
+Is the state local to one component?
+  └─ Yes → useState
+  └─ No: do all consumers live close in the tree?
+        └─ Yes → lift state up, pass via props
+        └─ No: is it server data with caching needs?
+              └─ Yes → React Query / SWR / RTK Query
+              └─ No: is your team big or codebase large?
+                    └─ Yes → Redux Toolkit
+                    └─ No  → Zustand
+```
+
+## Likely interview questions
+
+- "Walk me through unidirectional data flow." (action → reducer → store → view, repeat)
+- "Why do reducers have to be pure?" (predictable, time-travel, testable, replayable)
+- "How does Zustand avoid re-renders Redux would have?" (selector-scoped subscriptions; reference equality on the slice you select, not on the whole tree)
+- "When wouldn't you reach for either of these?" (server data, theme/auth context, single-component state)
