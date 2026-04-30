@@ -12,6 +12,7 @@ import Markdown from "react-markdown";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  BookmarkPlus,
   Check,
   Copy,
   Download,
@@ -45,6 +46,11 @@ import {
   stripForSpeech,
   type RecognitionHandle,
 } from "@/lib/speech";
+import {
+  createInterviewNoteFromSession,
+  getInterviewNote,
+  type InterviewNote,
+} from "@/lib/interviewNotes";
 
 const AUTO_SPEAK_KEY = "interview.autoSpeak";
 
@@ -75,6 +81,10 @@ export default function InterviewSessionPage({
   const [sttSupported, setSttSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [savedNote, setSavedNote] = useState<InterviewNote | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteJustSaved, setNoteJustSaved] = useState(false);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
   const recognitionRef = useRef<RecognitionHandle | null>(null);
@@ -243,6 +253,28 @@ export default function InterviewSessionPage({
     URL.revokeObjectURL(url);
   }
 
+  async function saveToNotes() {
+    if (!session || savingNote || isStreaming) return;
+    if (recognitionRef.current) recognitionRef.current.stop();
+    cancelSpeech();
+    setSpeakingIdx(null);
+    setSavingNote(true);
+    setNoteError(null);
+    setNoteJustSaved(false);
+    try {
+      const note = await createInterviewNoteFromSession(session.id);
+      if (!note) throw new Error("Note save failed");
+      setSavedNote(note);
+      setNoteJustSaved(true);
+      window.setTimeout(() => setNoteJustSaved(false), 4000);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setNoteError(msg);
+    } finally {
+      setSavingNote(false);
+    }
+  }
+
   useEffect(() => {
     getSession(sessionId).then((s) => {
       if (!s) {
@@ -254,6 +286,9 @@ export default function InterviewSessionPage({
         kickedOffRef.current = true;
         void send([{ role: "user", content: kickoffFor(s) }], s);
       }
+    });
+    getInterviewNote(sessionId).then((n) => {
+      if (n) setSavedNote(n);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -502,6 +537,35 @@ export default function InterviewSessionPage({
                 <span className="hidden sm:inline">Auto-speak</span>
               </Button>
             )}
+            {!session.endedAt && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => { void saveToNotes(); }}
+                disabled={
+                  savingNote ||
+                  isStreaming ||
+                  session.messages.length === 0
+                }
+                title={
+                  savedNote
+                    ? "Update saved note for this session"
+                    : "Generate a study note from this session"
+                }
+              >
+                <BookmarkPlus className="size-4" />
+                <span className="hidden sm:inline">
+                  {savingNote
+                    ? savedNote
+                      ? "Updating…"
+                      : "Saving…"
+                    : savedNote
+                      ? "Update note"
+                      : "Save to Notes"}
+                </span>
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -545,7 +609,12 @@ export default function InterviewSessionPage({
             ttsSupported={ttsSupported}
             isSpeaking={speakingIdx === i}
             isCopied={copiedIdx === i}
-            canRegenerate={i === lastAssistantIdx && !isStreaming && !session.endedAt}
+            canRegenerate={
+              i === lastAssistantIdx &&
+              !isStreaming &&
+              !savingNote &&
+              !session.endedAt
+            }
             onToggleSpeak={() => speakMessage(m.content, i)}
             onCopy={() => copyMessage(m.content, i)}
             onRegenerate={regenerateLast}
@@ -565,6 +634,34 @@ export default function InterviewSessionPage({
         </div>
       )}
 
+      {savingNote && (
+        <div className="rounded-lg border border-foreground/20 bg-muted/60 p-3 text-sm">
+          <span className="mr-2 inline-block size-2 animate-pulse rounded-full bg-primary align-middle" />
+          {savedNote ? "Updating saved note" : "Generating study note"} — chat
+          paused while the AI works (~30–60s)…
+        </div>
+      )}
+
+      {noteJustSaved && savedNote && !savingNote && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-sm">
+          <span>
+            <strong>{savedNote.title}</strong> saved.
+          </span>
+          <Link
+            href={`/notes/saved/${savedNote.id}`}
+            className="font-medium underline underline-offset-2 hover:opacity-80"
+          >
+            View note →
+          </Link>
+        </div>
+      )}
+
+      {noteError && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+          Couldn&apos;t save note: {noteError}
+        </div>
+      )}
+
       {!session.endedAt && (
         <form onSubmit={handleSubmit} className="space-y-2">
           <Textarea
@@ -572,10 +669,14 @@ export default function InterviewSessionPage({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              listening ? "Listening — speak your answer…" : "Type your answer…"
+              savingNote
+                ? "Chat paused — note is being generated…"
+                : listening
+                  ? "Listening — speak your answer…"
+                  : "Type your answer…"
             }
             className="min-h-24 max-h-64 resize-none overflow-y-auto"
-            disabled={isStreaming}
+            disabled={isStreaming || savingNote}
           />
           {listening && interim && (
             <p className="text-xs italic text-muted-foreground">
@@ -592,7 +693,7 @@ export default function InterviewSessionPage({
                   variant={listening ? "default" : "outline"}
                   size="sm"
                   onClick={listening ? stopListening : startListening}
-                  disabled={isStreaming}
+                  disabled={isStreaming || savingNote}
                   title={listening ? "Stop listening" : "Speak your answer"}
                 >
                   {listening ? (
@@ -605,8 +706,15 @@ export default function InterviewSessionPage({
                   </span>
                 </Button>
               )}
-              <Button type="submit" disabled={!input.trim() || isStreaming}>
-                {isStreaming ? "Streaming…" : "Send"}
+              <Button
+                type="submit"
+                disabled={!input.trim() || isStreaming || savingNote}
+              >
+                {savingNote
+                  ? "Paused…"
+                  : isStreaming
+                    ? "Streaming…"
+                    : "Send"}
               </Button>
             </div>
           </div>

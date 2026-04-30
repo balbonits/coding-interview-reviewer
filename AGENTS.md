@@ -138,13 +138,42 @@ Mapping lives in `lib/exercises.ts` (`TEMPLATE_EXT`) and `components/ExerciseSan
 
 - Server route: `app/api/ai/interview/route.ts` — POSTs to Ollama, streams NDJSON back to client. Trims oldest messages to keep within ~75% of the configured `num_ctx` (cheap char-based estimator).
 - Client: `app/interview/[sessionId]/page.tsx` — parses NDJSON line-by-line and renders progressively.
-- Sessions stored in `localStorage` via `lib/interviewSessions.ts` (typed CRUD).
-- System prompt is hardcoded in the route handler.
+- Sessions stored in MongoDB (`interview_sessions`) via `lib/interviewSessions.ts` (typed CRUD over `/api/sessions`).
+- Per-track interviewer prompts live in `INTERVIEW_TRACKS` (`lib/interviewSessions.ts`); the active prompt is built by `buildSystemPrompt(track, context)`.
+
+**Tracks**
+
+Built-in tracks: `javascript`, `dsa`, `react`, `typescript`, `html-css`, `system-design`, `general`. Each has a fixed `systemPrompt` that anchors the topic surface area.
+
+The `custom` track is different — it takes user-supplied context (`{ roleTitle, companyName, jobDescription, notes }`) and renders a templated interviewer prompt that simulates an actual interview for that specific role: small-talk warm-up, 4–6 questions weighted by the JD, behavioral close, candidate-questions wrap. Created from a form at `/interview` (paste a JD, hit Start).
+
+**Voice (Web Speech API)**
+
+The session page uses `lib/speech.ts` to wire the Web Speech API for both directions:
+- `🎤 Speak` button (`SpeechRecognition`) dictates into the answer textarea with live interim transcripts. Final phrases get appended to the existing input.
+- Per-message speaker icons + a header `🔊 Auto-speak` toggle (`SpeechSynthesis`) read the interviewer aloud. Auto-speak preference is persisted in `localStorage` (`interview.autoSpeak`).
+- Both are feature-detected — buttons hide if the browser lacks support. Chrome/Edge ship both; Safari has TTS but not STT; Firefox has neither.
+- `stripForSpeech()` removes Markdown punctuation and code-block contents before TTS so it doesn't read backticks/asterisks aloud.
+
+**Mermaid diagrams**
+
+Fenced ` ```mermaid ` blocks in interviewer / floating-chat output render inline as SVG via `components/MermaidBlock.tsx` (dynamic import of `mermaid`, dark-mode-reactive via `MutationObserver`, error fallback shows source). System prompts give the model permission to draw flowchart / sequenceDiagram / erDiagram when a visual would clarify.
+
+**Chat controls (Claude-style)**
+
+Each message has a hover-revealed action toolbar below the bubble: copy-as-Markdown, speak/stop (assistant only), regenerate (latest assistant turn only). Header has an `Export` button that downloads the full transcript as `.md` with track + role context, JD, and turn-by-turn `**Interviewer:** / **You:**` blocks.
+
+**Save to Notes**
+
+Click `Save to Notes` (header) → server fetches the session, calls Ollama with a summarizer system prompt, and stores the AI-generated study note in MongoDB (`interview_notes`). 1:1 pairing — the note's `_id` and `id` equal the session id, so re-saving updates the existing note instead of creating duplicates. Chat input is locked while the note is being generated to avoid two concurrent Ollama requests fighting for the model.
+
+Notes live at `/notes/saved/[id]` and surface in a `From your mock interviews` section on the `/notes` index. Schema: `{ id, sessionId, title, track, context?, tags, content, createdAt, updatedAt? }`. Title and tags are parsed from the AI output (`# Title` heading + `**Tags:**` line).
 
 **Env vars (memory caps):**
-- `OLLAMA_INTERVIEW_MODEL` — default `qwen2.5:14b` (Q4_K_M ≈ 9 GB resident).
+- `OLLAMA_INTERVIEW_MODEL` — default `qwen2.5:14b` (Q4_K_M ≈ 9 GB resident). Used by both the streaming interviewer and the Save-to-Notes summarizer.
 - `OLLAMA_URL` — default `http://localhost:11434`.
 - `OLLAMA_NUM_CTX` — default `4096`. Lower this if you need to shrink the KV cache further.
+- `OLLAMA_NOTES_NUM_CTX` — default `8192`. The summarizer needs to fit the whole transcript, so it gets a bigger window.
 - Recommend setting `OLLAMA_MAX_LOADED_MODELS=1` in your shell so two models can't co-load. `keep_alive` is hard-coded to `2m` in `lib/ollama.ts` so the model unloads quickly when idle.
 
 ## What's shipped
@@ -152,11 +181,12 @@ Mapping lives in `lib/exercises.ts` (`TEMPLATE_EXT`) and `components/ExerciseSan
 All core features are complete. The app is local-only by design (Ollama can't run in the cloud).
 
 - **`/exercises`** — Sandpack exercises, 5 templates, auto-graded tests, reveal solution, AI hint/review/explain panel
-- **`/notes`** — MDX note library, tag filtering, 12 notes across all front-end subjects
-- **`/interview`** — Streaming AI mock interviewer, sessions in MongoDB, Markdown rendering
+- **`/notes`** — MDX note library + a `From your mock interviews` section listing AI-generated study notes (`/notes/saved/[id]`), tag filtering, 12 notes across all front-end subjects
+- **`/interview`** — Streaming AI mock interviewer with 7 fixed tracks + a `Custom Mock Interview` track that takes a JD and simulates an actual interview for the role. Sessions in MongoDB, Markdown rendering, Mermaid diagrams, Web Speech API voice (both directions), per-message chat controls (copy / regenerate / speak), `.md` transcript export, and `Save to Notes` for AI-distilled study notes (1:1 with session)
 - **`/review`** — SM-2 spaced repetition queue, MongoDB-backed
 - **`/news`** — RSS aggregator (JS Weekly, CSS Weekly, Smashing, Dev.to), per-item AI summarization
 - **`/capture`** — Quick capture form, MongoDB persistence, MDX export
+- **Floating study assistant** (every page except `/interview`) — Markdown + Mermaid + per-message copy
 - **Dark mode** — ThemeToggle component, FOUC-free inline script, localStorage persistence
 
 Content: 15 exercises, 12 notes spanning DSA, React, TypeScript, REST APIs, Node.js, MongoDB, SEO, UX/UI, microservices/MFEs, modern HTML/CSS/JS.
