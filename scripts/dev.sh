@@ -34,6 +34,28 @@ wait_for_mongo() {
   return 1
 }
 
+# Poll until the Docker daemon answers (max ~60 s — Docker Desktop cold-start).
+wait_for_docker() {
+  local i=0
+  while (( i < 60 )); do
+    docker info &>/dev/null && return 0
+    sleep 1
+    i=$(( i + 1 ))
+  done
+  return 1
+}
+
+# Poll until SearXNG /healthz responds (max ~30 s).
+wait_for_searxng() {
+  local i=0
+  while (( i < 30 )); do
+    curl -sf http://localhost:8888/healthz &>/dev/null && return 0
+    sleep 1
+    i=$(( i + 1 ))
+  done
+  return 1
+}
+
 # ─── ollama check / start ─────────────────────────────────────────────────────
 
 OLLAMA_MODEL="${OLLAMA_INTERVIEW_MODEL:-qwen2.5:14b}"
@@ -128,6 +150,65 @@ Or download from https://www.mongodb.com/try/download/community"
   wait_for_mongo \
     || die "mongod started but is not accepting connections on :27017"
   echo "✓ mongod started"
+fi
+
+# ─── docker / searxng (optional — for on-demand web search) ───────────────────
+# Web search is opt-in: every check below degrades to a warning rather than
+# killing the script, because the rest of the app works without it.
+
+if ! command -v docker &>/dev/null; then
+  echo "ℹ docker not installed — web search disabled (skip if you don't need it)"
+else
+  if docker info &>/dev/null; then
+    echo "✓ docker daemon running"
+  else
+    echo "  docker daemon not running — starting Docker Desktop…"
+    DOCKER_STARTABLE=false
+    if [[ "$(uname)" == "Darwin" && -d "/Applications/Docker.app" ]]; then
+      open -a Docker || true
+      DOCKER_STARTABLE=true
+    elif command -v systemctl &>/dev/null && systemctl list-unit-files docker.service &>/dev/null; then
+      sudo systemctl start docker || true
+      DOCKER_STARTABLE=true
+    fi
+
+    if [[ "$DOCKER_STARTABLE" == true ]]; then
+      if wait_for_docker; then
+        echo "✓ docker daemon started"
+      else
+        echo "⚠ docker did not come online within 60s — web search disabled this run"
+      fi
+    else
+      echo "⚠ docker installed but not auto-startable — web search disabled this run"
+    fi
+  fi
+
+  # If Docker is now reachable, ensure the searxng container is up.
+  if docker info &>/dev/null; then
+    if docker ps --format '{{.Names}}' | grep -qx searxng; then
+      echo "✓ searxng already running"
+    elif docker ps -a --format '{{.Names}}' | grep -qx searxng; then
+      echo "  searxng exists but stopped — starting…"
+      if docker start searxng &>/dev/null && wait_for_searxng; then
+        echo "✓ searxng started"
+      else
+        echo "⚠ searxng did not come online — try 'docker logs searxng'"
+      fi
+    else
+      echo "  searxng container missing — creating (first run pulls ~150 MB image)…"
+      if docker run -d --name searxng -p 8888:8080 \
+           -v "$(pwd)/searxng:/etc/searxng" \
+           searxng/searxng:latest &>/dev/null; then
+        if wait_for_searxng; then
+          echo "✓ searxng created and ready"
+        else
+          echo "⚠ searxng started but /healthz did not respond — check 'docker logs searxng'"
+        fi
+      else
+        echo "⚠ failed to create searxng container — web search disabled this run"
+      fi
+    fi
+  fi
 fi
 
 # ─── Next.js dev server ───────────────────────────────────────────────────────

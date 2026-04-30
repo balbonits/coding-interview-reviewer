@@ -71,21 +71,31 @@ brew tap mongodb/brew && brew install mongodb-community
 
 The floating study assistant can call a local SearXNG instance when you ask it to search, verify, or cite sources. SearXNG is a free, open-source metasearch aggregator that runs in Docker. **Skip this step if you don't want web search** — the rest of the app works fine without it.
 
+**The good news: `npm run dev:local` handles everything automatically** if Docker is installed. It will:
+1. Start Docker Desktop if not running (macOS / systemd Linux)
+2. Create the SearXNG container on first run (pulls ~150 MB image)
+3. Start the existing container on later runs
+4. Skip with a warning if Docker isn't installed
+
+So all you need is:
 ```bash
-# Install Docker Desktop first (if you don't have it):
-# https://www.docker.com/products/docker-desktop/
+# Install Docker Desktop once: https://www.docker.com/products/docker-desktop/
+# Then just run as usual:
+npm run dev:local
+```
 
-# Start SearXNG with our pre-baked config (mounts ./searxng/settings.yml):
-docker run -d --name searxng -p 8888:8080 \
-  -v "$(pwd)/searxng:/etc/searxng" \
-  searxng/searxng:latest
-
+Manual control if you want it:
+```bash
 # Health check:
 curl -sf http://localhost:8888/healthz && echo "ok"
 
-# Stop / start later:
+# Stop / start without restarting the whole dev server:
 docker stop searxng
 docker start searxng
+
+# Nuke and recreate (e.g. after editing searxng/settings.yml):
+docker rm -f searxng
+# next `npm run dev:local` will recreate it from the fresh config
 ```
 
 If SearXNG isn't running, the assistant gracefully falls back to "answering from training data only" with an inline notice. No errors, no broken UI.
