@@ -7,6 +7,7 @@ import { getNote, listNoteSlugs } from "@/lib/notes";
 import { mdxComponents } from "@/components/MdxComponents";
 import { SetPageContext } from "@/components/SetPageContext";
 import { QuizMeButton } from "@/components/QuizMeButton";
+import { SmartBackLink } from "@/components/SmartBackLink";
 import { Badge } from "@/components/ui/badge";
 
 export async function generateStaticParams() {
@@ -37,12 +38,7 @@ export default async function NotePage({
 
   return (
     <article className="space-y-8">
-      <Link
-        href="/notes"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← All notes
-      </Link>
+      <SmartBackLink fallbackHref="/notes" fallbackLabel="All notes" />
 
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">

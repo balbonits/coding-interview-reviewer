@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { QuizMeButton } from "@/components/QuizMeButton";
+import { SmartBackLink } from "@/components/SmartBackLink";
 import {
   deleteInterviewNote,
   getInterviewNote,
@@ -46,12 +47,7 @@ export default function SavedNotePage({
   if (!note) {
     return (
       <div className="space-y-4">
-        <Link
-          href="/notes"
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
-          ← All notes
-        </Link>
+        <SmartBackLink fallbackHref="/notes" fallbackLabel="All notes" />
         <p className="text-muted-foreground">Note not found.</p>
       </div>
     );
@@ -59,12 +55,7 @@ export default function SavedNotePage({
 
   return (
     <article className="space-y-6">
-      <Link
-        href="/notes"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← All notes
-      </Link>
+      <SmartBackLink fallbackHref="/notes" fallbackLabel="All notes" />
 
       <header className="space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">

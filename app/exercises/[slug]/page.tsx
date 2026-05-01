@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import rehypePrism from "rehype-prism-plus";
 import remarkGfm from "remark-gfm";
@@ -11,6 +10,7 @@ import { ExerciseSandbox } from "@/components/ExerciseSandbox";
 import { mdxComponents } from "@/components/MdxComponents";
 import { SetPageContext } from "@/components/SetPageContext";
 import { QuizMeButton } from "@/components/QuizMeButton";
+import { SmartBackLink } from "@/components/SmartBackLink";
 import { Badge } from "@/components/ui/badge";
 
 const difficultyColor: Record<string, string> = {
@@ -49,12 +49,7 @@ export default async function ExercisePage({
 
   return (
     <article className="space-y-8">
-      <Link
-        href="/exercises"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        ← All exercises
-      </Link>
+      <SmartBackLink fallbackHref="/exercises" fallbackLabel="All exercises" />
 
       <header className="space-y-3">
         <div className="flex items-center gap-3 text-sm">

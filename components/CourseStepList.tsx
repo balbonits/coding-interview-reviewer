@@ -22,26 +22,40 @@ const STEP_ICON: Record<CourseStep["kind"], string> = {
   external: "🔗",
 };
 
-function stepHref(step: CourseStep): string | null {
+/**
+ * Compute the URL to navigate to for a given step. Internal links get the
+ * `backTo` and `backLabel` params appended so the destination page can show
+ * a "← back to <course>" link (via SmartBackLink). External links pass
+ * through unchanged.
+ */
+function stepHref(step: CourseStep, backTo: string, backLabel: string): string | null {
+  const back = `backTo=${encodeURIComponent(backTo)}&backLabel=${encodeURIComponent(backLabel)}`;
   switch (step.kind) {
     case "note":
-      return `/notes/${step.slug}`;
+      return `/notes/${step.slug}?${back}`;
     case "exercise":
-      return `/exercises/${step.slug}`;
+      return `/exercises/${step.slug}?${back}`;
     case "quiz": {
       const params = new URLSearchParams({
         source: "topic",
         topic: step.topic,
       });
-      return `/quiz?${params.toString()}`;
+      return `/quiz?${params.toString()}&${back}`;
     }
     case "interview":
       // Sends user to the /interview landing — they pick this track from there.
-      // The interview track field hints which preset card to click.
-      return `/interview`;
+      return `/interview?${back}`;
     case "external":
       return step.url;
   }
+}
+
+/** Hand-authored courses live at /courses/<slug>; AI courses at /courses/ai/<id>. */
+function courseHref(courseSlug: string): string {
+  if (courseSlug.startsWith("ai:")) {
+    return `/courses/ai/${courseSlug.slice(3)}`;
+  }
+  return `/courses/${courseSlug}`;
 }
 
 function stepTitle(step: CourseStep): string {
@@ -160,7 +174,11 @@ export function CourseStepList({ course }: { course: CourseManifest }) {
                 {section.steps.map((step, iIdx) => {
                   const id = stepId(course.slug, sIdx, iIdx);
                   const isDone = completed.has(id);
-                  const href = stepHref(step);
+                  const href = stepHref(
+                    step,
+                    courseHref(course.slug),
+                    course.title,
+                  );
                   const title = stepTitle(step);
                   const isExternal =
                     step.kind === "external" && href?.startsWith("http");
