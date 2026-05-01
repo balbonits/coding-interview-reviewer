@@ -68,30 +68,71 @@ export default async function CoursesPage() {
     fetchAiCourses(),
   ]);
 
-  // Group progress by course
-  const byCourse = new Map<string, number>();
+  // Group progress by course — count of done steps + most recent activity.
+  const byCourse = new Map<string, { count: number; lastAt: number }>();
   for (const p of allProgress) {
-    byCourse.set(p.courseSlug, (byCourse.get(p.courseSlug) ?? 0) + 1);
+    const cur = byCourse.get(p.courseSlug) ?? { count: 0, lastAt: 0 };
+    cur.count += 1;
+    if (p.completedAt > cur.lastAt) cur.lastAt = p.completedAt;
+    byCourse.set(p.courseSlug, cur);
   }
 
-  // Find a "continue where you left off" candidate — most recently progressed
-  // course that isn't fully complete.
-  let resume: { slug: string; updatedAt: number } | null = null;
-  const latestPerCourse = new Map<string, number>();
-  for (const p of allProgress) {
-    const cur = latestPerCourse.get(p.courseSlug) ?? 0;
-    if (p.completedAt > cur) latestPerCourse.set(p.courseSlug, p.completedAt);
+  // Build the "In progress" list — partial-progress courses sorted by recency.
+  // Includes both hand-authored and AI courses.
+  type InProgressCard = {
+    type: "manual" | "ai";
+    href: string;
+    title: string;
+    description: string;
+    level: "beginner" | "intermediate" | "advanced";
+    estimatedHours: number;
+    tags: string[];
+    total: number;
+    done: number;
+    lastAt: number;
+    prompt?: string;
+  };
+  const inProgress: InProgressCard[] = [];
+  for (const c of courses) {
+    const total = countSteps(c);
+    const slot = byCourse.get(c.slug);
+    if (!slot || slot.count === 0 || slot.count >= total) continue;
+    inProgress.push({
+      type: "manual",
+      href: `/courses/${c.slug}`,
+      title: c.title,
+      description: c.description,
+      level: c.level,
+      estimatedHours: c.estimatedHours,
+      tags: c.tags,
+      total,
+      done: slot.count,
+      lastAt: slot.lastAt,
+    });
   }
-  for (const [slug, ts] of latestPerCourse) {
-    const course = courses.find((c) => c.slug === slug);
-    if (!course) continue;
-    const total = countSteps(course);
-    const done = byCourse.get(slug) ?? 0;
-    if (done < total && (!resume || ts > resume.updatedAt)) {
-      resume = { slug, updatedAt: ts };
-    }
+  for (const a of aiCourses) {
+    const total = a.sections.reduce(
+      (sum, sec) => sum + sec.steps.length,
+      0,
+    );
+    const slug = `ai:${a.id}`;
+    const slot = byCourse.get(slug);
+    if (!slot || slot.count === 0 || slot.count >= total) continue;
+    inProgress.push({
+      type: "ai",
+      href: `/courses/ai/${a.id}`,
+      title: a.title,
+      description: a.description,
+      level: a.level,
+      estimatedHours: a.estimatedHours,
+      tags: a.tags,
+      total,
+      done: slot.count,
+      lastAt: slot.lastAt,
+      prompt: a.prompt,
+    });
   }
-  const resumeCourse = resume ? courses.find((c) => c.slug === resume.slug) : null;
+  inProgress.sort((a, b) => b.lastAt - a.lastAt);
 
   return (
     <div className="space-y-8">
@@ -108,20 +149,67 @@ export default async function CoursesPage() {
         <GenerateCourseForm />
       </section>
 
-      {resumeCourse && (
-        <section className="rounded-xl border border-primary/30 bg-primary/5 p-5">
-          <p className="text-xs font-medium uppercase tracking-wider text-primary">
-            Continue where you left off
-          </p>
-          <Link
-            href={`/courses/${resumeCourse.slug}`}
-            className="mt-1 block text-xl font-semibold hover:underline"
-          >
-            {resumeCourse.title}
-          </Link>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {byCourse.get(resumeCourse.slug) ?? 0} of {countSteps(resumeCourse)} steps complete
-          </p>
+      {inProgress.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <h2 className="text-xl font-semibold">In progress</h2>
+            <p className="text-xs text-muted-foreground">
+              {inProgress.length}{" "}
+              {inProgress.length === 1 ? "course" : "courses"}
+            </p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {inProgress.map((c) => {
+              const pct = Math.round((c.done / c.total) * 100);
+              return (
+                <Link key={c.href} href={c.href} className="group">
+                  <Card className="flex h-full flex-col border-primary/40 transition-colors group-hover:border-primary/70">
+                    <CardHeader className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        {c.type === "ai" && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 font-medium text-primary">
+                            <Sparkles className="size-3" />
+                            AI
+                          </span>
+                        )}
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-medium capitalize ${LEVEL_COLOR[c.level] ?? ""}`}
+                        >
+                          {c.level}
+                        </span>
+                        <span className="text-muted-foreground">
+                          ~{c.estimatedHours}h · {c.total} steps
+                        </span>
+                      </div>
+                      <CardTitle className="leading-snug line-clamp-2">
+                        {c.title}
+                      </CardTitle>
+                      <CardDescription className="line-clamp-2">
+                        {c.description}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="mt-auto space-y-2 pt-0">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {c.done}/{c.total} ·{" "}
+                          {relativeTime(c.lastAt)}
+                        </span>
+                        <span className="font-medium text-primary">
+                          Continue →
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
         </section>
       )}
 
@@ -143,7 +231,7 @@ export default async function CoursesPage() {
                 0,
               );
               const slug = `ai:${course.id}`;
-              const done = byCourse.get(slug) ?? 0;
+              const done = byCourse.get(slug)?.count ?? 0;
               const pct = total > 0 ? Math.round((done / total) * 100) : 0;
               return (
                 <Link
@@ -209,7 +297,7 @@ export default async function CoursesPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {courses.map((course) => {
             const total = countSteps(course);
-            const done = byCourse.get(course.slug) ?? 0;
+            const done = byCourse.get(course.slug)?.count ?? 0;
             const pct = total > 0 ? Math.round((done / total) * 100) : 0;
             return (
               <Link
@@ -266,4 +354,16 @@ export default async function CoursesPage() {
       </section>
     </div>
   );
+}
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts;
+  const min = 60_000;
+  const hr = 60 * min;
+  const day = 24 * hr;
+  if (diff < min) return "just now";
+  if (diff < hr) return `${Math.floor(diff / min)}m ago`;
+  if (diff < day) return `${Math.floor(diff / hr)}h ago`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
+  return new Date(ts).toLocaleDateString();
 }
