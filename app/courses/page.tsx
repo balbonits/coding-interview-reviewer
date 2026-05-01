@@ -197,8 +197,7 @@ export default async function CoursesPage() {
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>
-                          {c.done}/{c.total} ·{" "}
-                          {relativeTime(c.lastAt)}
+                          {c.done}/{c.total} · {pct}%
                         </span>
                         <span className="font-medium text-primary">
                           Continue →
@@ -356,14 +355,3 @@ export default async function CoursesPage() {
   );
 }
 
-function relativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const min = 60_000;
-  const hr = 60 * min;
-  const day = 24 * hr;
-  if (diff < min) return "just now";
-  if (diff < hr) return `${Math.floor(diff / min)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hr)}h ago`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
-  return new Date(ts).toLocaleDateString();
-}
