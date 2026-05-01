@@ -13,10 +13,13 @@ import {
   Check,
   Copy,
   History,
+  Maximize2,
   MessageSquarePlus,
+  Minimize2,
   Trash2,
   Volume2,
   VolumeOff,
+  WrapText,
 } from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { usePageContext } from "@/lib/pageContext";
@@ -39,8 +42,10 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 
 const AUTO_SPEAK_KEY = "floatingChat.autoSpeak";
 const ACTIVE_SESSION_KEY = "floatingChat.activeSessionId";
+const WRAP_CODE_KEY = "floatingChat.wrapCode";
 
 type ChatView = "chat" | "history";
+type WindowMode = "bubble" | "fullscreen";
 
 export function FloatingChat() {
   const pathname = usePathname();
@@ -60,6 +65,8 @@ export function FloatingChat() {
     [],
   );
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [windowMode, setWindowMode] = useState<WindowMode>("bubble");
+  const [wrapCode, setWrapCode] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoSpeakRef = useRef(false);
   const lastSpokenIdxRef = useRef<number>(-1);
@@ -74,6 +81,7 @@ export function FloatingChat() {
     setTtsSupported(isSpeechSynthesisSupported());
     try {
       setAutoSpeak(localStorage.getItem(AUTO_SPEAK_KEY) === "1");
+      setWrapCode(localStorage.getItem(WRAP_CODE_KEY) === "1");
     } catch {
       // ignore
     }
@@ -147,6 +155,15 @@ export function FloatingChat() {
     if (!next) {
       cancelSpeech();
       setSpeakingIdx(null);
+    }
+  }
+
+  function persistWrapCode(next: boolean) {
+    setWrapCode(next);
+    try {
+      localStorage.setItem(WRAP_CODE_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
     }
   }
 
@@ -345,7 +362,13 @@ export function FloatingChat() {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
       {open && (
-        <div className="flex flex-col w-[380px] h-[500px] rounded-xl border border-border bg-background shadow-2xl overflow-hidden">
+        <div
+          className={
+            windowMode === "fullscreen"
+              ? "fixed inset-4 z-50 flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+              : "flex flex-col w-[380px] h-[500px] rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+          }
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/40 shrink-0">
             <div className="min-w-0">
@@ -380,6 +403,48 @@ export function FloatingChat() {
                 className="rounded p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <MessageSquarePlus className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => persistWrapCode(!wrapCode)}
+                title={
+                  wrapCode
+                    ? "Code wrap on — click to disable"
+                    : "Code wrap off — click to enable"
+                }
+                aria-label={wrapCode ? "Disable code wrap" : "Enable code wrap"}
+                className={`rounded p-1 transition-colors hover:bg-background ${
+                  wrapCode
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <WrapText className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setWindowMode((m) =>
+                    m === "bubble" ? "fullscreen" : "bubble",
+                  )
+                }
+                title={
+                  windowMode === "bubble"
+                    ? "Maximize to full window"
+                    : "Restore to bubble"
+                }
+                aria-label={
+                  windowMode === "bubble"
+                    ? "Maximize to full window"
+                    : "Restore to bubble"
+                }
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+              >
+                {windowMode === "bubble" ? (
+                  <Maximize2 className="size-4" />
+                ) : (
+                  <Minimize2 className="size-4" />
+                )}
               </button>
               {ttsSupported && (
                 <button
@@ -506,13 +571,17 @@ export function FloatingChat() {
                             );
                           }
                           const isBlock = className?.startsWith("language-");
-                          return isBlock ? (
-                            <pre className="my-2 overflow-x-auto rounded bg-zinc-950 p-2 text-xs text-zinc-100">
-                              <code className={className} {...props}>
-                                {children}
-                              </code>
-                            </pre>
-                          ) : (
+                          if (isBlock) {
+                            const lang = className?.replace("language-", "");
+                            return (
+                              <CodeBlock
+                                source={String(children)}
+                                language={lang}
+                                wrap={wrapCode}
+                              />
+                            );
+                          }
+                          return (
                             <code
                               className="rounded bg-background/60 px-1 py-0.5 font-mono text-xs"
                               {...props}
@@ -681,7 +750,8 @@ export function FloatingChat() {
         </div>
       )}
 
-      {/* Toggle button */}
+      {/* Toggle button — hide when fullscreen so it doesn't float over the panel */}
+      {(!open || windowMode === "bubble") && (
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity"
@@ -705,6 +775,52 @@ export function FloatingChat() {
           </svg>
         )}
       </button>
+      )}
     </div>
+  );
+}
+
+// ---------- CodeBlock with line numbers + optional wrap ----------
+
+function CodeBlock({
+  source,
+  language,
+  wrap,
+}: {
+  source: string;
+  language?: string;
+  wrap: boolean;
+}) {
+  // Trim a single trailing newline (common in fenced blocks) but not internal blank lines.
+  const code = source.replace(/\n$/, "");
+  const lines = code.split("\n");
+  const gutterWidth = `${Math.max(2, String(lines.length).length + 1)}ch`;
+
+  return (
+    <pre
+      className="my-2 overflow-x-auto rounded bg-zinc-950 text-xs text-zinc-100"
+      data-language={language}
+    >
+      <code className="block p-2 font-mono leading-5">
+        {lines.map((line, i) => (
+          <div
+            key={i}
+            className="grid items-start gap-x-2"
+            style={{ gridTemplateColumns: `${gutterWidth} 1fr` }}
+          >
+            <span className="select-none text-right text-zinc-500" aria-hidden>
+              {i + 1}
+            </span>
+            <span
+              className={
+                wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"
+              }
+            >
+              {line || " "}
+            </span>
+          </div>
+        ))}
+      </code>
+    </pre>
   );
 }
