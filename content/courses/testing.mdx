@@ -1,0 +1,88 @@
+---
+title: "Testing, QA & Automation"
+description: "From unit tests through E2E, CI/CD pipelines, and the QA discipline — every kind of testing, the philosophies behind them, and the judgments interviewers ask about."
+level: "intermediate"
+estimatedHours: 7
+tags: ["testing", "qa", "automation", "tdd", "ci-cd", "interviews"]
+sections:
+  - title: "Quick reference"
+    steps:
+      - kind: "note"
+        slug: "testing-cheat-sheet"
+        note: "Test types, pyramid vs trophy, frameworks, AAA, doubles, coverage."
+  - title: "Foundations & philosophy"
+    steps:
+      - kind: "quiz"
+        topic: "Why we test, the test pyramid vs the testing trophy, when to favor unit vs integration vs E2E"
+        count: 5
+        title: "Pyramid & strategy quiz"
+      - kind: "quiz"
+        topic: "Test-Driven Development (red-green-refactor), Behavior-Driven Development, when to use TDD vs test-after, Given-When-Then"
+        count: 5
+        title: "TDD / BDD quiz"
+  - title: "Frameworks & patterns"
+    steps:
+      - kind: "quiz"
+        topic: "JavaScript testing frameworks (Vitest, Jest, Mocha, node:test), assertion libraries, test runners, the AAA pattern"
+        count: 6
+        title: "Frameworks & AAA quiz"
+      - kind: "quiz"
+        topic: "Test doubles: dummies, stubs, spies, mocks, fakes — when to use each, why mocking your own internals is usually wrong"
+        count: 6
+        title: "Test doubles quiz"
+  - title: "Testing React"
+    steps:
+      - kind: "quiz"
+        topic: "React Testing Library philosophy: query by role, userEvent vs fireEvent, testing behavior over implementation, common pitfalls"
+        count: 6
+        title: "RTL quiz"
+  - title: "Coverage & quality"
+    steps:
+      - kind: "quiz"
+        topic: "Code coverage metrics (line, branch, function, statement), why 100% coverage doesn't mean tested, mutation testing with Stryker, snapshot testing"
+        count: 6
+        title: "Coverage & quality quiz"
+  - title: "QA & automation"
+    steps:
+      - kind: "note"
+        slug: "qa-automation"
+        note: "QA discipline, CI integration, environments, specialized testing, flaky tests."
+      - kind: "quiz"
+        topic: "QA strategy: manual vs automated, when to automate, regression vs smoke vs sanity testing, exploratory testing"
+        count: 6
+        title: "QA strategy quiz"
+      - kind: "quiz"
+        topic: "CI/CD test pipelines: required checks, ephemeral PR environments, test data strategies (fixtures, factories, MSW, in-memory databases)"
+        count: 6
+        title: "CI/CD pipeline quiz"
+  - title: "E2E & specialized testing"
+    steps:
+      - kind: "quiz"
+        topic: "End-to-end testing: Playwright vs Cypress vs Selenium, page-object pattern, deterministic seeding, why E2E is at the top of the pyramid"
+        count: 6
+        title: "E2E quiz"
+      - kind: "quiz"
+        topic: "Specialized testing: accessibility (axe, jest-axe), visual regression (Percy / Chromatic), performance (Lighthouse CI), contract testing (Pact)"
+        count: 6
+        title: "Specialized testing quiz"
+  - title: "Real-world judgment"
+    steps:
+      - kind: "quiz"
+        topic: "Flaky tests: causes (timing assumptions, shared state, real network/time, async leaks), how to quarantine, why a 1% flake rate destroys CI trust"
+        count: 5
+        title: "Flaky tests quiz"
+      - kind: "quiz"
+        topic: "Testing anti-patterns: testing implementation details, brittle selectors, mocks all the way down, no assertions, sleep-based timing"
+        count: 5
+        title: "Anti-patterns quiz"
+  - title: "Wrap-up"
+    steps:
+      - kind: "interview"
+        track: "system-design"
+        title: "Mock testing-strategy interview"
+        note: "Walk through the testing strategy for a real product end-to-end."
+---
+
+A focused track on testing as a discipline. The cheat sheet anchors the surface — types, frameworks, AAA, mocks, coverage. Then philosophy (pyramid, TDD/BDD), then RTL, then coverage quality (mutation testing), then QA + CI/CD, then E2E and specialized testing.
+
+Heavy on AI quizzes by design — the testing landscape is broad and most interview questions are conceptual ("when would you reach for X over Y?"). End with a system-design mock to practice talking through a testing strategy for a real product.

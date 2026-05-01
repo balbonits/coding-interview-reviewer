@@ -1,0 +1,211 @@
+---
+title: "QA & Test Automation"
+tags: ["qa", "testing", "automation", "ci-cd", "interviews"]
+related: ["testing-cheat-sheet"]
+---
+
+QA isn't a phase you do at the end. It's a discipline that runs alongside development — and increasingly, the practical skill is *automation*: making sure the right tests run at the right time without humans gating every release. For the unit/integration test foundation see [Testing Cheat Sheet](./testing-cheat-sheet).
+
+## What QA actually does
+
+Hollywood version: "QA finds bugs." Reality: in modern teams, QA owns the **process** of catching defects and the **strategy** for which defects matter.
+
+A working QA function does:
+
+1. **Test strategy** — what gets tested, by whom, at what level, before each release.
+2. **Test infrastructure** — CI configuration, fixtures, environments, data.
+3. **Exploratory testing** — humans poking at the product in ways automation can't anticipate.
+4. **Bug triage** — turning user reports and crash logs into actionable tickets.
+5. **Release gating** — does this build qualify to ship? What's the criterion?
+6. **Regression coverage** — making sure yesterday's bugs don't recur.
+
+In small teams, engineers wear the QA hat. In larger orgs, dedicated QA / SDET (Software Development Engineer in Test) roles own this. Either way, the work is the same.
+
+## Manual vs automated — the actual trade-off
+
+|  | Manual | Automated |
+|---|---|---|
+| Cost to set up | Low | High |
+| Cost to run | High (per run) | Near zero |
+| Best for | Exploratory, visual, UX, edge cases | Regression, deterministic flows |
+| Catches | What humans notice | What you specified |
+| Misses | Drift over time | What you didn't think of |
+
+Rule of thumb: **automate the tests you'd otherwise re-run by hand more than three times**. Below that, manual is cheaper. Above that, automation pays back fast.
+
+Automation does NOT replace exploratory testing — they're complementary. Humans find UX issues, broken visual hierarchy, weird edge cases. Automation catches the regressions humans already found once.
+
+## The CI/CD test pipeline
+
+Every commit / PR runs through a pipeline. The general shape:
+
+```
+┌──────────────────────────────────────────────┐
+│ 1. Static checks       (seconds)              │
+│    type-check, lint, format                   │
+├──────────────────────────────────────────────┤
+│ 2. Unit tests          (10s–1min)             │
+│    pure logic, components in isolation        │
+├──────────────────────────────────────────────┤
+│ 3. Integration tests   (1–5min)               │
+│    components + their collaborators           │
+├──────────────────────────────────────────────┤
+│ 4. Build               (1–3min)               │
+│    must succeed before shipping               │
+├──────────────────────────────────────────────┤
+│ 5. E2E tests           (3–15min)              │
+│    against an ephemeral preview environment   │
+├──────────────────────────────────────────────┤
+│ 6. Performance / a11y / visual checks         │
+│    Lighthouse, axe, Percy / Chromatic         │
+└──────────────────────────────────────────────┘
+                          │
+                          ▼
+              merge / deploy gating
+```
+
+Order matters: cheap things fail fast. Don't run E2E if lint failed.
+
+## What to test, and at what level
+
+| Layer | What lives here | Examples |
+|---|---|---|
+| **Static** | Things types/lint can prove | Type errors, unused vars, missing await |
+| **Unit** | Pure logic | Reducers, parsers, math, formatters |
+| **Component** | Rendered UI behavior | Form submits, conditional rendering |
+| **Integration** | Many units together | Hook + API + UI all wired up |
+| **Contract** | Service boundaries | API client matches server's OpenAPI |
+| **E2E** | Real user flows | Login → post → comment → log out |
+| **Visual** | Pixel-level UI | Storybook screenshots vs baseline |
+| **Performance** | Speed budgets | Page load `< 2s`, bundle size limits |
+| **Accessibility** | a11y rules | Color contrast, ARIA, keyboard navigation |
+| **Security** | Vuln scans | Dependency audit, SAST, secret scanning |
+
+Don't test the same behavior at multiple levels — pick the cheapest level that gives confidence.
+
+## Test environments
+
+```
+local dev      → real, can break freely
+ephemeral PR   → spun up per pull request, real services + seeded data
+staging        → long-lived, prod-like, used for E2E / manual / canary
+production     → real users, real data
+```
+
+E2E and visual tests should run against ephemeral PR environments — fresh, deterministic, isolated. Long-lived shared "QA" environments accumulate state and become unreliable.
+
+## Test data strategies
+
+The hardest problem in test suites is data.
+
+| Strategy | When |
+|---|---|
+| **Hard-coded fixtures** | Small, stable | Simple integration tests |
+| **Factory functions** | Need many similar objects | `userFactory({ name: "Alice" })` (Test Data Builder) |
+| **Database snapshots** | Big, complex graph | Slow but realistic |
+| **Per-test seeding** | Need exact state | Slow, deterministic |
+| **In-memory databases** | Want fast + realistic | SQLite in-memory, MongoDB in-memory |
+| **Mock at the network boundary** | UI / hook tests | MSW (Mock Service Worker) |
+
+MSW is the modern default for front-end integration tests — you intercept fetch at the network layer, so the rest of your code is real.
+
+## Specialized testing types
+
+### Accessibility
+
+```bash
+npm install --save-dev @axe-core/playwright jest-axe
+```
+
+Catches WCAG violations: missing alt text, contrast failures, missing labels, ARIA misuse. Integrate with E2E (Playwright + axe), unit (jest-axe), and Storybook (a11y addon).
+
+Won't catch: keyboard trap problems, screen-reader narration quality, cognitive accessibility. You still need humans for those.
+
+### Visual regression
+
+```bash
+# Percy / Chromatic / Reg-Viz / Playwright's built-in toMatchSnapshot
+```
+
+Take screenshots, compare to a baseline. Reviewer approves or rejects diffs.
+
+Watch out for:
+- **Flakiness** — antialiasing, font rendering, animation timing. Disable transitions, use a deterministic clock, mask volatile regions.
+- **Approval fatigue** — every CSS tweak produces 50 diffs. Use it for stable component galleries (Storybook), not the whole app.
+
+### Performance
+
+```bash
+# Lighthouse CI in pipeline:
+npx lhci autorun
+# k6 for load testing:
+k6 run --vus 100 --duration 30s script.js
+```
+
+Set budgets for: page load, bundle size, Core Web Vitals (LCP, FID/INP, CLS). Fail the build if budgets are exceeded.
+
+### Contract testing
+
+Producer (API server) and consumer (your client) agree on a contract. Pact is the dominant tool. Less common in front-end-only work; very common in microservice architectures.
+
+## Flaky tests — the existential threat
+
+A flaky test is one that fails sometimes for reasons unrelated to the code. Causes (in order of frequency):
+
+1. **Timing assumptions** — `setTimeout(500)` vs `waitFor(...)`.
+2. **Test ordering / shared state** — test B fails when run after test A.
+3. **External services** — real network, real time, real `Math.random()`.
+4. **Async leaks** — promises that complete after the test ended.
+5. **Browser quirks** — viewport size, font loading, animation.
+
+A 1% flaky test in a 200-test suite means **the suite fails on ~86% of CI runs** (1 - 0.99^200). Engineers stop trusting the suite, then stop reading failures, then ship bugs.
+
+Fixes:
+- Replace `sleep`/`setTimeout` with `waitFor` / `findBy*` queries that retry.
+- Use fake timers (`vi.useFakeTimers()`) for time-dependent code.
+- Reset module state and DB state in `beforeEach`.
+- Run E2E against deterministic seed data.
+- Quarantine flaky tests immediately — don't let one rotting test poison the suite.
+
+If a test is flaky and you can't fix it today, **disable it with a TODO**. Better than retraining the team to ignore failures.
+
+## Test naming
+
+Good test names tell you what broke from the failure list alone, no need to read the code.
+
+```
+✗ multiplication              ← bad — what about it?
+✗ throws on negative          ← better, but throws what?
+✓ throws RangeError when count is negative   ← clear
+✓ returns 0 when input array is empty        ← clear
+```
+
+Convention: `it("describes what it does, not how it does it")` — describe the *behavior*, not the *implementation*.
+
+## Tooling overview
+
+| Tool | What it's for |
+|---|---|
+| **Vitest / Jest** | Unit + integration in JS/TS |
+| **Playwright** | Cross-browser E2E + component testing |
+| **Cypress** | E2E (Chromium-focused) |
+| **Selenium WebDriver** | Legacy E2E, polyglot client support |
+| **Appium** | Mobile E2E |
+| **MSW** | Network mocking for tests + dev |
+| **Lighthouse CI** | Performance budgets in CI |
+| **axe-core / jest-axe** | Accessibility checks |
+| **Percy / Chromatic / Argos** | Visual regression |
+| **k6 / Artillery** | Load testing |
+| **Stryker** | Mutation testing |
+| **fast-check** | Property-based testing |
+| **Pact** | Consumer-driven contract testing |
+| **GitHub Actions / CircleCI / Buildkite** | CI orchestration |
+
+## Likely interview questions
+
+- "What's your testing strategy for a new feature?" — start with the contract (types), then unit-test pure logic, then integration-test the user-facing behavior, then E2E only the critical path. Skip visual/perf/a11y until the feature is stable.
+- "How do you keep an E2E suite healthy as a project grows?" — ephemeral environments per PR, deterministic seed data, no real time / network / random, quarantine flakes immediately, monitor pass rates as a metric.
+- "When would you NOT automate a test?" — when the cost of automation exceeds the cost of running it manually a few times. Brand-new exploratory work, one-off migrations, throwaway tools.
+- "What's a flaky test, and how do you handle one?" — a test that fails non-deterministically. Quarantine first, root-cause second. Most often timing, shared state, or real-network dependencies.
+- "How does CI gate releases?" — required checks (lint, types, tests, build) must pass on the PR; protected branches enforce this; deploys are gated on a passing tag/branch + optional manual approval.
+- "What's the difference between regression, smoke, and sanity testing?" — regression: full suite, runs on every change. Smoke: critical-path subset, runs after deploy ("did the build basically work?"). Sanity: targeted, runs before a release ("does the specific change work?").

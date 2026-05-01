@@ -1,0 +1,216 @@
+---
+title: "Testing Cheat Sheet"
+tags: ["testing", "tdd", "bdd", "testing-frameworks", "interviews", "cheat-sheet"]
+related: ["qa-automation"]
+---
+
+The whole testing surface at a glance — types, pyramids, frameworks, philosophies, and the judgments interviewers care about. For the QA / automation / CI side see [QA & Automation](./qa-automation).
+
+## Why we test (the actual answer)
+
+Tests aren't about "proving the code works" — that's impossible. They're about:
+
+1. **Confidence to change** — a good test suite lets you refactor without fear.
+2. **Documentation** — tests describe what the code is *supposed* to do better than comments do.
+3. **Design pressure** — code that's hard to test is usually badly designed.
+4. **Regression catch** — yesterday's bug doesn't reappear silently.
+
+The first one is the real reason. Everything else is a side benefit.
+
+## The test pyramid (and why some teams flipped it)
+
+Mike Cohn's classic pyramid: lots of fast unit tests at the bottom, fewer integration tests in the middle, a handful of slow E2E tests at the top.
+
+```
+           /\
+          /E2E\        few — slow, brittle, expensive
+         /------\
+        /  Integ \     some — moderate speed and scope
+       /----------\
+      /    Unit    \   many — fast, isolated, narrow
+     /--------------\
+```
+
+**The Testing Trophy** (Kent C. Dodds, modern preference): integration tests at the wide middle, fewer units, light E2E, plus static analysis underneath.
+
+```
+          ___
+         |E2E|         small
+         |---|
+         |Int|         FAT — most of the value
+         |---|
+         |Unt|         smaller than you think
+         |---|
+         |Stc|         types, lint, formatters
+```
+
+The shift came because in modern front-end work, integration tests (a component + its hooks + its data layer mocked at the network boundary) catch the bugs users actually hit. Unit-testing every internal helper produces a brittle suite that breaks on refactor without catching real regressions.
+
+**Today's working answer:** static analysis (TS + lint) eliminates a class of bugs for free; integration tests are where most behavior lives; units cover pure logic; E2E covers happy-path smoke only.
+
+## Test types
+
+| Type | Scope | Speed | When |
+|---|---|---|---|
+| **Unit** | One function/class | `<10ms` | Pure logic, edge cases |
+| **Integration** | Component + collaborators (network mocked) | 10–500ms | Component renders + interacts correctly |
+| **Contract** | Service boundary | varies | Producer/consumer agree on shape (Pact) |
+| **End-to-End (E2E)** | Real browser, real backend | seconds | Critical user flows (login, checkout) |
+| **Visual regression** | Screenshot diff | seconds | UI shouldn't change unexpectedly |
+| **Property-based** | Random inputs vs invariants | varies | Pure functions, parsers, codecs |
+| **Mutation** | Mutates code, runs tests | minutes+ | Asks "are my tests actually checking anything?" |
+| **Performance** | Latency / throughput thresholds | varies | Critical paths (search, render) |
+| **Accessibility** | a11y rules (WCAG, axe) | fast | Catch obvious a11y regressions |
+
+You don't need all of them. Start with units + integration; add E2E for top user flows; add visual / a11y / perf when there's a real problem to prevent.
+
+## Frameworks (front-end / Node)
+
+| Framework | What it is | Best for |
+|---|---|---|
+| **Vitest** | Vite-native, Jest-compatible API, faster | New JS/TS projects (the 2025 default) |
+| **Jest** | Mature, batteries included | Existing projects, React Native |
+| **Mocha + Chai + Sinon** | A la carte | Long-lived Node projects, opinionated stacks |
+| **node:test** | Built into Node 20+ | Zero-deps Node libraries |
+| **React Testing Library (RTL)** | DOM-based, user-perspective | Any React component test |
+| **Playwright** | Modern E2E, cross-browser, auto-wait | E2E and component testing |
+| **Cypress** | E2E with great DX, weird architecture | E2E (declining vs Playwright) |
+| **Storybook + Chromatic** | Component dev + visual regression | UI-heavy projects |
+| **fast-check** | Property-based for JS/TS | Pure-function testing |
+| **Stryker** | Mutation testing | Validating test quality |
+
+Vitest + RTL + Playwright is the dominant 2025 stack for new front-end projects.
+
+## The AAA pattern
+
+Every good test follows this:
+
+```ts
+test("adds two numbers", () => {
+  // Arrange — set up inputs and mocks
+  const a = 2;
+  const b = 3;
+
+  // Act — execute the thing under test (one operation)
+  const result = add(a, b);
+
+  // Assert — check the result
+  expect(result).toBe(5);
+});
+```
+
+Variants:
+- **Given-When-Then** (BDD-flavored, same idea): `Given the user is logged in, When they click submit, Then they see a confirmation`.
+- **One assertion per test** is a guideline, not a rule. Multiple `expect` calls are fine if they describe one behavior.
+
+Anti-pattern: tests that mix multiple "Acts." Hard to debug when they fail because you don't know which step broke.
+
+## Test doubles, in plain words
+
+| Term | What it does | Example |
+|---|---|---|
+| **Dummy** | Passed but never used | A required arg you don't care about |
+| **Stub** | Returns canned values | `getUser.mockReturnValue({ name: "A" })` |
+| **Spy** | Records how it was called | `expect(saveSpy).toHaveBeenCalledWith(x)` |
+| **Mock** | Stub + spy, with expectations | Jest's `jest.fn()` covers this |
+| **Fake** | A real-ish working replacement | In-memory database for tests |
+
+In Jest / Vitest, `vi.fn()` (or `jest.fn()`) is technically a mock that does all of these depending on how you use it. The terminology matters in interviews; in practice, "mock" colloquially covers everything.
+
+**Mock at the boundary, not internally.** Mock the network layer, not your own helper functions. Mocking your own internals couples the test to implementation; the test breaks on refactor without catching real regressions.
+
+## Coverage — what 100% doesn't tell you
+
+```bash
+npx vitest run --coverage
+```
+
+Four numbers come back: lines, branches, functions, statements.
+
+Coverage answers "did this code execute during tests?" It does NOT answer:
+- Did the assertions actually check the result?
+- Did edge cases (null, empty, error paths) get tested?
+- Are these tests testing behavior or implementation?
+
+**100% coverage with bad assertions is worse than 80% coverage with good ones.** Mutation testing (Stryker) is the actual signal — it changes operators (`+` to `-`, `>` to `>=`) and re-runs tests; surviving mutants mean the test didn't catch the change.
+
+Realistic targets: 80% line coverage on app code, 90%+ on shared libraries, with branch coverage tracked separately.
+
+## Snapshots — useful and dangerous
+
+```ts
+expect(rendered).toMatchSnapshot();   // Vitest / Jest
+```
+
+Great for: large structured outputs you want to *notice* changing (rendered HTML, JSON API responses, error messages).
+
+Footgun: developers run `--update-snapshots` reflexively when something breaks, defeating the purpose. Snapshots are most useful when reviewers actually read the diff during code review.
+
+**Inline snapshots** (`toMatchInlineSnapshot()`) put the snapshot value in the test file itself. Diffs show up in normal code review and reviewers can't miss them.
+
+## Testing React with RTL — the philosophy
+
+> "The more your tests resemble the way your software is used, the more confidence they can give you." — Kent C. Dodds
+
+```tsx
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+test("submits form on click", async () => {
+  const onSubmit = vi.fn();
+  render(<LoginForm onSubmit={onSubmit} />);
+
+  await userEvent.type(screen.getByLabelText(/email/i), "a@example.com");
+  await userEvent.type(screen.getByLabelText(/password/i), "hunter2");
+  await userEvent.click(screen.getByRole("button", { name: /log in/i }));
+
+  expect(onSubmit).toHaveBeenCalledWith({
+    email: "a@example.com",
+    password: "hunter2",
+  });
+});
+```
+
+Rules of RTL:
+- Query by what the user sees: `getByRole`, `getByLabelText`, `getByText`. Avoid `data-testid` unless nothing else works.
+- Don't test implementation details. No `expect(component.state.x).toBe(...)`. No `instance().method()`.
+- `userEvent` (not `fireEvent`) for realistic interactions. It triggers the browser's actual event sequence.
+
+## TDD vs BDD vs test-after
+
+- **TDD (Test-Driven Development):** write the failing test first, then the implementation, then refactor. Red-green-refactor. Best for narrow algorithmic work where you know the inputs/outputs.
+- **BDD (Behavior-Driven Development):** TDD + Given-When-Then language so non-engineers can read tests. Cucumber/Gherkin tools. Heavier, often overengineered for solo work.
+- **Test-after:** write code first, write tests after. Most common in practice. Fine, as long as the tests get written.
+
+The interview answer is: pick TDD when it's a pure-function, well-specced problem (parsers, math, state machines); skip it when you're exploring a UI shape and don't know the API yet.
+
+## Pure logic vs effects vs UI — different test treatment
+
+| What you're testing | How |
+|---|---|
+| Pure function | Direct call, table-driven inputs and expected outputs |
+| Reducer / state machine | Same — pass state + action, assert next state |
+| Hook with side effects | `renderHook` from RTL; mock the network layer; assert on returned values |
+| React component | Render via RTL, interact via userEvent, assert on the DOM |
+| Service / API client | Real fetch with `msw` mock server, assert on outcomes |
+| Whole user flow | Playwright against a running app |
+
+Don't test components in isolation when their interesting behavior is in their dependencies. Don't test pure logic via the UI either — that's slow and indirect.
+
+## Anti-patterns interviewers watch for
+
+- **Testing implementation details** — assertions on private internals or render output structure (instead of behavior).
+- **Brittle selectors** — `.querySelector(".btn-primary > span:nth-child(2)")` breaks on every CSS tweak.
+- **Mocks all the way down** — a 200-line test where everything's mocked tests the mocks, not the code.
+- **No assertions** — `await waitFor(() => screen.getByText("done"))` is a passive wait. Add an explicit assertion.
+- **Tests that share state** — Vitest/Jest run tests in parallel; mutating module state breaks isolation. Use `beforeEach` to reset.
+- **Sleep-based timing** — `await sleep(500)` is the #1 cause of flakiness. Use `waitFor`, mock timers, or `findBy*` queries.
+
+## Likely interview questions
+
+- "What's the difference between a mock and a stub?" — stub returns canned values; mock additionally verifies *how* it was called. Many libraries collapse them.
+- "Where would you draw the line between unit and integration tests?" — unit tests one function in isolation; integration tests a unit plus its real collaborators (with the network mocked).
+- "How do you decide what to test?" — test public behavior at the right boundary; pure logic gets unit tests; UI gets integration tests through the public component API; critical user flows get E2E.
+- "What's wrong with 100% code coverage?" — coverage measures execution, not assertion quality. Mutation testing is the real signal.
+- "When would you reach for snapshot testing?" — for large structured outputs you want changes flagged in code review. Inline snapshots are usually better than file-based.
+- "Walk me through TDD." — write a failing test that pins down the next slice of behavior; write the simplest code that makes it pass; refactor; repeat.
