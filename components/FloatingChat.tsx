@@ -8,11 +8,20 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import Markdown from "react-markdown";
-import { Check, Copy } from "lucide-react";
+import remarkGfm from "remark-gfm";
+import { Check, Copy, Volume2, VolumeOff } from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { usePageContext } from "@/lib/pageContext";
+import {
+  cancelSpeech,
+  isSpeechSynthesisSupported,
+  speak,
+  stripForSpeech,
+} from "@/lib/speech";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+
+const AUTO_SPEAK_KEY = "floatingChat.autoSpeak";
 
 export function FloatingChat() {
   const pathname = usePathname();
@@ -23,7 +32,39 @@ export function FloatingChat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoSpeakRef = useRef(false);
+  const lastSpokenIdxRef = useRef<number>(-1);
+
+  useEffect(() => {
+    autoSpeakRef.current = autoSpeak;
+  }, [autoSpeak]);
+
+  useEffect(() => {
+    setTtsSupported(isSpeechSynthesisSupported());
+    try {
+      setAutoSpeak(localStorage.getItem(AUTO_SPEAK_KEY) === "1");
+    } catch {
+      // ignore
+    }
+    return () => cancelSpeech();
+  }, []);
+
+  function persistAutoSpeak(next: boolean) {
+    setAutoSpeak(next);
+    try {
+      localStorage.setItem(AUTO_SPEAK_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+    if (!next) {
+      cancelSpeech();
+      setSpeakingIdx(null);
+    }
+  }
 
   async function copyMessage(content: string, idx: number) {
     try {
@@ -38,11 +79,44 @@ export function FloatingChat() {
     }
   }
 
+  function speakMessage(text: string, idx: number) {
+    if (speakingIdx === idx) {
+      cancelSpeech();
+      setSpeakingIdx(null);
+      return;
+    }
+    const ok = speak(stripForSpeech(text), {
+      onStart: () => setSpeakingIdx(idx),
+      onEnd: () => setSpeakingIdx(null),
+      onError: () => setSpeakingIdx(null),
+    });
+    if (!ok) setSpeakingIdx(null);
+  }
+
   useEffect(() => {
     if (open && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, open]);
+
+  // Auto-speak: when streaming finishes for the latest assistant message,
+  // read it aloud once if auto-speak is enabled.
+  useEffect(() => {
+    if (isStreaming) return;
+    if (!autoSpeakRef.current) return;
+    if (messages.length === 0) return;
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last.role !== "assistant") return;
+    if (!last.content.trim()) return;
+    if (lastSpokenIdxRef.current === lastIdx) return;
+    lastSpokenIdxRef.current = lastIdx;
+    speak(stripForSpeech(last.content), {
+      onStart: () => setSpeakingIdx(lastIdx),
+      onEnd: () => setSpeakingIdx(null),
+      onError: () => setSpeakingIdx(null),
+    });
+  }, [isStreaming, messages]);
 
   // Interview pages have their own dedicated AI chat
   if (pathname?.startsWith("/interview")) return null;
@@ -144,13 +218,40 @@ export function FloatingChat() {
                 </p>
               )}
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              className="ml-3 shrink-0 text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-              aria-label="Close study assistant"
-            >
-              ✕
-            </button>
+            <div className="ml-3 flex shrink-0 items-center gap-1">
+              {ttsSupported && (
+                <button
+                  type="button"
+                  onClick={() => persistAutoSpeak(!autoSpeak)}
+                  title={
+                    autoSpeak
+                      ? "Auto-speak on — click to disable"
+                      : "Auto-speak off — click to enable"
+                  }
+                  aria-label={
+                    autoSpeak ? "Disable auto-speak" : "Enable auto-speak"
+                  }
+                  className={`rounded p-1 transition-colors hover:bg-background ${
+                    autoSpeak
+                      ? "text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {autoSpeak ? (
+                    <Volume2 className="size-4" />
+                  ) : (
+                    <VolumeOff className="size-4" />
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => setOpen(false)}
+                className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
+                aria-label="Close study assistant"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
@@ -177,6 +278,7 @@ export function FloatingChat() {
                 >
                   {m.role === "assistant" ? (
                     <Markdown
+                      remarkPlugins={[remarkGfm]}
                       components={{
                         code: ({ className, children, ...props }) => {
                           if (className === "language-mermaid") {
@@ -206,6 +308,26 @@ export function FloatingChat() {
                             {children}
                           </p>
                         ),
+                        strong: ({ children }) => (
+                          <strong className="font-semibold">{children}</strong>
+                        ),
+                        em: ({ children }) => (
+                          <em className="italic">{children}</em>
+                        ),
+                        h1: ({ children }) => (
+                          <h1 className="mt-2 mb-1 text-base font-semibold">{children}</h1>
+                        ),
+                        h2: ({ children }) => (
+                          <h2 className="mt-2 mb-1 font-semibold">{children}</h2>
+                        ),
+                        h3: ({ children }) => (
+                          <h3 className="mt-1 mb-1 font-medium">{children}</h3>
+                        ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="my-2 border-l-2 border-border pl-2 italic opacity-80">
+                            {children}
+                          </blockquote>
+                        ),
                         ul: ({ children, ...props }) => (
                           <ul className="my-1 list-disc pl-4 space-y-0.5" {...props}>
                             {children}
@@ -216,6 +338,39 @@ export function FloatingChat() {
                             {children}
                           </ol>
                         ),
+                        table: ({ children }) => (
+                          <div className="my-2 overflow-x-auto">
+                            <table className="w-full border-collapse text-xs">
+                              {children}
+                            </table>
+                          </div>
+                        ),
+                        thead: ({ children }) => (
+                          <thead className="border-b border-border">{children}</thead>
+                        ),
+                        tr: ({ children }) => (
+                          <tr className="border-b border-border/50 last:border-0">
+                            {children}
+                          </tr>
+                        ),
+                        th: ({ children }) => (
+                          <th className="px-2 py-1 text-left font-semibold align-top">
+                            {children}
+                          </th>
+                        ),
+                        td: ({ children }) => (
+                          <td className="px-2 py-1 align-top">{children}</td>
+                        ),
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary underline underline-offset-2 hover:opacity-80"
+                          >
+                            {children}
+                          </a>
+                        ),
                       }}
                     >
                       {m.content || (isStreaming && i === messages.length - 1 ? "▋" : "")}
@@ -225,25 +380,52 @@ export function FloatingChat() {
                   )}
                 </div>
                 {m.content.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => copyMessage(m.content, i)}
-                    title={copiedIdx === i ? "Copied!" : "Copy as Markdown"}
-                    aria-label={
-                      copiedIdx === i ? "Copied" : "Copy as Markdown"
-                    }
-                    className={`mt-0.5 rounded p-1 text-muted-foreground transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 ${
-                      copiedIdx === i
+                  <div
+                    className={`mt-0.5 flex gap-0.5 transition-opacity ${
+                      copiedIdx === i || speakingIdx === i
                         ? "opacity-100"
-                        : "opacity-0 group-hover/msg:opacity-100"
+                        : "opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100"
                     }`}
                   >
-                    {copiedIdx === i ? (
-                      <Check className="size-3" />
-                    ) : (
-                      <Copy className="size-3" />
+                    <button
+                      type="button"
+                      onClick={() => copyMessage(m.content, i)}
+                      title={copiedIdx === i ? "Copied!" : "Copy as Markdown"}
+                      aria-label={
+                        copiedIdx === i ? "Copied" : "Copy as Markdown"
+                      }
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      {copiedIdx === i ? (
+                        <Check className="size-3" />
+                      ) : (
+                        <Copy className="size-3" />
+                      )}
+                    </button>
+                    {ttsSupported && m.role === "assistant" && (
+                      <button
+                        type="button"
+                        onClick={() => speakMessage(m.content, i)}
+                        title={
+                          speakingIdx === i ? "Stop speaking" : "Read aloud"
+                        }
+                        aria-label={
+                          speakingIdx === i ? "Stop speaking" : "Read aloud"
+                        }
+                        className={`rounded p-1 hover:bg-muted hover:text-foreground ${
+                          speakingIdx === i
+                            ? "text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {speakingIdx === i ? (
+                          <VolumeOff className="size-3" />
+                        ) : (
+                          <Volume2 className="size-3" />
+                        )}
+                      </button>
                     )}
-                  </button>
+                  </div>
                 )}
               </div>
             ))}
