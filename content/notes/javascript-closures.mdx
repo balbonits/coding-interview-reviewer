@@ -1,7 +1,7 @@
 ---
 title: "JavaScript Closures & Lexical Scoping"
 tags: ["javascript", "ecmascript", "fundamentals"]
-related: ["scope", "memory-management", "modules"]
+related: ["modern-javascript", "react-hooks", "nodejs-cheat-sheet"]
 ---
 
 A **closure** is a function bundled with references to its surrounding state (its lexical environment). Every JS function is a closure — it remembers the variables that were in scope when it was *defined*, even after the outer function has returned.
@@ -116,6 +116,14 @@ The click handler captures the entire scope, even unused names. Fix: don't defin
 - Defined by where the function was *written*, not where it's *called* (lexical, not dynamic).
 - Use cases: private state, factories, callbacks that need memory.
 - Watch out for `var` in loops and accidental memory retention.
+
+## Likely interview questions
+
+- **"What's a closure, in one sentence?"** A function bundled with its lexical environment, so it can access variables from the scope it was defined in even after that scope returned.
+- **"Why does `for (var i=0; i<3; i++) setTimeout(()=>console.log(i))` print 3, 3, 3?"** All three closures share the same `i` (`var` is function-scoped); by the time the timers fire, the loop has finished and `i === 3`. Replacing `var` with `let` prints 0, 1, 2 because block scoping creates a fresh binding each iteration.
+- **"Give a real-world use of closures other than `setTimeout`."** Memoization caches; debounce / throttle; factory functions that produce configured callbacks; the module pattern (private variables in function scope before ES modules).
+- **"How do closures cause memory leaks?"** A closure keeps its entire enclosing scope alive — not just the variables it actually uses. Big captured objects don't get garbage-collected until the closure itself is unreachable. Common culprit: event handlers attached inside scopes that hold large data.
+- **"How does `this` interact with closures?"** `this` is NOT lexically captured by regular functions — it's set by the call site. Arrow functions DO inherit `this` from the enclosing lexical scope. That's their main superpower over `function` expressions in callbacks.
 
 ## Sources
 

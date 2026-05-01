@@ -1,7 +1,7 @@
 ---
 title: "Modern HTML: What Changed Since 2008"
 tags: ["html", "frontend", "fundamentals", "modern", "accessibility"]
-related: ["semantic-html", "forms", "web-components"]
+related: ["modern-css", "ux-ui", "seo"]
 ---
 
 If your HTML knowledge is from the table-layout / `div` everywhere era, the language has gained a lot of native UI capability — modals, popovers, accordions, lazy-loading — that used to require JavaScript libraries. Almost everything in this note is **production-ready** across modern browsers (Chrome, Safari, Firefox, Edge).
@@ -212,6 +212,15 @@ Custom elements + Shadow DOM + HTML templates let you build framework-agnostic c
 | Color picker | jQuery colorpicker | `<input type="color">` |
 | Disable a UI region | `pointer-events:none` + tabindex hacks | `inert` attribute |
 | Page structure | nested `<div>`s | semantic landmarks |
+
+## Likely interview questions
+
+- **"What's the difference between `<dialog>` and a custom div modal?"** `<dialog>` gets focus management, `Esc`-to-close, top-layer rendering, and the `inert` semantics for everything else for free. Custom modals re-implement all of this — usually badly.
+- **"When would you use `<details>` over a JS-toggled accordion?"** When you don't need state synchronized with anything else and just want collapse/expand. Free keyboard support, native semantics, ships zero JS.
+- **"What does the `inert` attribute do?"** Removes a region from the focus / hit-testing tree without hiding it visually. Used on the rest of the page when a modal is open so Tab navigation can't escape into the background.
+- **"Popover API vs `<dialog>` — when each?"** Popover for transient UI (tooltips, menus, dropdowns) — auto-dismisses on outside click, layered above everything. Dialog for blocking content where the user must engage (modal forms, confirmations, error dialogs).
+- **"Why is `loading="lazy"` better than Intersection Observer?"** Browser owns the heuristic, no JS bundle cost, works in the no-JS case. Intersection Observer is for cases the platform doesn't cover (e.g., implementing your own infinite scroll).
+- **"Why does semantic HTML matter beyond SEO?"** Screen readers navigate by landmark (`<nav>`, `<main>`, `<aside>`); assistive-tech rotors list `<h1>`–`<h6>` headings. A page that's all `<div>`s gives non-sighted users no way to scan.
 
 ## Sources
 

@@ -1,7 +1,7 @@
 ---
 title: "Modern JavaScript: ES2015 → ES2024+ in One Note"
 tags: ["javascript", "ecmascript", "fundamentals", "modern"]
-related: ["async", "modules", "destructuring"]
+related: ["javascript-closures", "typescript-modern-features", "nodejs-cheat-sheet"]
 ---
 
 If your JavaScript is from the ES5 / "always use `var`" era, here's everything that's been added since — organized by what it solves, not by ECMAScript version. Every feature here ships in current Chrome, Safari, Firefox, Edge, Node, and Bun.
@@ -319,6 +319,15 @@ For integers beyond `Number.MAX_SAFE_INTEGER` (2⁵³-1). Don't mix BigInt with 
 | Find element | `for` loop with `if` | `arr.find(p)` |
 | Async control flow | nested callbacks / `.then` chains | `async/await` |
 | Module system | CommonJS / AMD | ES modules (`import`/`export`) |
+
+## Likely interview questions
+
+- **"`==` vs `===`?"** `==` does type coercion, leading to the famous gotchas (`"" == false` is `true`, `null == undefined` is `true`). `===` checks type and value strictly. Default to `===` unless you specifically want coercion (almost never).
+- **"`null` vs `undefined`?"** `undefined` means "this variable has no assigned value" (default state). `null` means "explicitly empty" — you set it. Practically: use `undefined` for "missing" and `null` only when you need to express "this was intentionally cleared."
+- **"Why prefer `??` over `||`?"** `||` falls back on any falsy value (including `0`, `""`, `false`); `??` only on `null` and `undefined`. Use `??` for default values when 0 or empty string are valid actual inputs.
+- **"What does `structuredClone` do that `JSON.parse(JSON.stringify(x))` doesn't?"** Handles `Date`, `Map`, `Set`, `RegExp`, circular references, and ArrayBuffers. The JSON-roundtrip silently corrupts all of those (Dates become strings, Maps become `{}`, etc.).
+- **"What's `Symbol` for in practice?"** Unique property keys that won't collide with future additions. Used by libraries to attach metadata (`Symbol.iterator`, `Symbol.asyncIterator`) without polluting the public API surface.
+- **"Why are arrow functions usually preferred for callbacks?"** They lexically capture `this` from the surrounding scope, fixing the classic "method calls a callback that loses `this`" bug. Don't use them as object methods or constructors — that's where regular `function` still wins.
 
 ## Sources
 

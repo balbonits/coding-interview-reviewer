@@ -1,7 +1,7 @@
 ---
 title: "Modern CSS: What Changed Since You Last Looked"
 tags: ["css", "frontend", "fundamentals", "modern"]
-related: ["layout", "design-systems", "responsive-design"]
+related: ["modern-html", "ux-ui"]
 ---
 
 If your CSS knowledge is from before ~2018, the language has changed more in the last few years than in the previous decade. This note is the "what to update on" cheatsheet — every feature here is **production-ready** in current Chrome, Firefox, Safari, and Edge (Baseline 2024+).
@@ -197,6 +197,15 @@ For SPAs, this is the React Framer-Motion replacement for many cases. Single Pag
 | Tame specificity wars | `!important` | `@layer` |
 | Derive color shades | hand-pick or Sass | `oklch()` + `color-mix()` |
 | Smooth state transitions | Framer Motion / GSAP | View Transitions API |
+
+## Likely interview questions
+
+- **"When would you reach for grid vs flex?"** Grid for two-dimensional layout (rows AND columns aligned). Flex for one-dimensional (a row OR a column). They compose well — flex inside grid cells is common.
+- **"What does the `:has()` selector enable that wasn't possible before?"** Selecting a parent based on its descendants without JS. E.g., `form:has(input:invalid)` styles the form when any child input is invalid.
+- **"Container queries vs media queries — when each?"** Container queries respond to the *parent's* size, not the viewport. Use them for components that should adapt regardless of where they're placed (sidebar vs main content).
+- **"What problem do `@layer` (cascade layers) solve?"** Specificity wars. You declare priority order between layers (e.g., `@layer reset, base, components, utilities`) and a low-specificity rule in a higher layer beats a high-specificity rule in a lower layer.
+- **"Why is `oklch()` better than `rgb()` for design systems?"** Perceptually uniform: equal lightness values look equally light; you can derive shades programmatically without picking-by-eye.
+- **"How do logical properties differ from physical ones, and why does it matter?"** `margin-inline-start` vs `margin-left`: logical properties flip automatically for RTL languages and vertical writing modes. Use them for any UI you might internationalize.
 
 ## Sources
 

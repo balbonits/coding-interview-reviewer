@@ -1,7 +1,7 @@
 ---
 title: "TypeScript Utility Types & Modern Features (5.x)"
 tags: ["typescript", "types", "fundamentals"]
-related: ["generics", "type-narrowing", "discriminated-unions"]
+related: ["modern-javascript", "react-cheat-sheet"]
 ---
 
 TypeScript ships a small library of built-in **utility types** that transform other types — making props optional, extracting return types, picking subsets of keys. Knowing them isn't optional for a serious TS interview.
@@ -163,6 +163,15 @@ This pattern beats `if (data) ... else if (error) ...` every time. Reach for it 
 - Use `satisfies` instead of `as` when you want type checking with inference preserved.
 - Reach for discriminated unions for any "one of N states" data shape.
 - Know that TS 5 added `const` type parameters and `NoInfer` (signals you actually keep up).
+
+## Likely interview questions
+
+- **"What's the difference between `as` and `satisfies`?"** `as` casts and silences the type system (often hiding bugs). `satisfies` checks the value matches a type WITHOUT widening it — you keep the narrower inferred type for downstream use. Reach for `satisfies` whenever you want type checking with inference preserved.
+- **"When would you use `unknown` over `any`?"** `unknown` is `any`'s safer cousin: it accepts any value but forces a narrowing check before you use it. Use `unknown` at boundary code (parsing JSON, third-party data, error objects in a `catch`); use `any` essentially never in new code.
+- **"How does TS know which branch of a discriminated union you're in?"** Control-flow analysis on a literal-typed discriminator field (e.g., `kind: "loading" | "success" | "error"`). Inside `if (x.kind === "success")`, TS narrows the rest of the type accordingly.
+- **"What does `Awaited<T>` do?"** Recursively unwraps `Promise<T>` to give you the eventual value type. Useful when you have `ReturnType<typeof asyncFn>` and need the resolved value, not the `Promise`.
+- **"When should you write a generic vs `unknown`?"** Generics when the caller's input type relates to the output type — the type flows through. `unknown` when you genuinely don't know and just need to accept anything. Pattern to avoid: `function getById<T>(id: string): T` — the caller can claim any type, defeating the purpose.
+- **"What's the difference between a type and an interface?"** They're nearly equivalent for object shapes. Interfaces support declaration merging (multiple interfaces with the same name combine); types don't. Types support unions, intersections, and computed types (mapped/conditional); interfaces don't. Use `type` by default; reach for `interface` when you need merging (rare outside libraries).
 
 ## Sources
 
