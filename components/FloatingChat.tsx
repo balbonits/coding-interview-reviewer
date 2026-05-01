@@ -9,7 +9,15 @@ import {
 import { usePathname } from "next/navigation";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, Volume2, VolumeOff } from "lucide-react";
+import {
+  Check,
+  Copy,
+  History,
+  MessageSquarePlus,
+  Trash2,
+  Volume2,
+  VolumeOff,
+} from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { usePageContext } from "@/lib/pageContext";
 import {
@@ -18,10 +26,21 @@ import {
   speak,
   stripForSpeech,
 } from "@/lib/speech";
+import {
+  deleteFloatingChatSession,
+  deriveTitle,
+  getFloatingChatSession,
+  listFloatingChatSessions,
+  saveFloatingChatSession,
+  type FloatingChatSession,
+} from "@/lib/floatingChatSessions";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 const AUTO_SPEAK_KEY = "floatingChat.autoSpeak";
+const ACTIVE_SESSION_KEY = "floatingChat.activeSessionId";
+
+type ChatView = "chat" | "history";
 
 export function FloatingChat() {
   const pathname = usePathname();
@@ -35,9 +54,17 @@ export function FloatingChat() {
   const [speakingIdx, setSpeakingIdx] = useState<number | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [view, setView] = useState<ChatView>("chat");
+  const [historySessions, setHistorySessions] = useState<FloatingChatSession[]>(
+    [],
+  );
+  const [historyLoading, setHistoryLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoSpeakRef = useRef(false);
   const lastSpokenIdxRef = useRef<number>(-1);
+  const saveTimerRef = useRef<number | null>(null);
+  const sessionCreatedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     autoSpeakRef.current = autoSpeak;
@@ -50,8 +77,65 @@ export function FloatingChat() {
     } catch {
       // ignore
     }
+    // Restore the active session if one is pinned in localStorage.
+    let activeId: string | null = null;
+    try {
+      activeId = localStorage.getItem(ACTIVE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+    if (activeId) {
+      void getFloatingChatSession(activeId).then((s) => {
+        if (s) {
+          setSessionId(s.id);
+          setMessages(s.messages);
+          sessionCreatedAtRef.current = s.createdAt;
+        } else {
+          // session was deleted; clear stale id
+          try {
+            localStorage.removeItem(ACTIVE_SESSION_KEY);
+          } catch {}
+        }
+      });
+    }
     return () => cancelSpeech();
   }, []);
+
+  // Auto-save the active session whenever messages settle (debounced 800ms;
+  // skipped while streaming so we don't churn on every token).
+  useEffect(() => {
+    if (isStreaming) return;
+    if (messages.length === 0) return;
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      const id = sessionId ?? crypto.randomUUID();
+      const now = Date.now();
+      const createdAt = sessionCreatedAtRef.current ?? now;
+      const session: FloatingChatSession = {
+        id,
+        title: deriveTitle(messages),
+        pagePath: pathname ?? undefined,
+        pageTitle: ctx.title || undefined,
+        messages,
+        createdAt,
+        updatedAt: now,
+      };
+      void saveFloatingChatSession(session);
+      if (!sessionId) {
+        setSessionId(id);
+        sessionCreatedAtRef.current = createdAt;
+        try {
+          localStorage.setItem(ACTIVE_SESSION_KEY, id);
+        } catch {}
+      }
+    }, 800);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isStreaming]);
 
   function persistAutoSpeak(next: boolean) {
     setAutoSpeak(next);
@@ -91,6 +175,60 @@ export function FloatingChat() {
       onError: () => setSpeakingIdx(null),
     });
     if (!ok) setSpeakingIdx(null);
+  }
+
+  function newChat() {
+    if (isStreaming) return;
+    cancelSpeech();
+    setMessages([]);
+    setInput("");
+    setError(null);
+    setCopiedIdx(null);
+    setSpeakingIdx(null);
+    setSessionId(null);
+    sessionCreatedAtRef.current = null;
+    lastSpokenIdxRef.current = -1;
+    setView("chat");
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch {}
+  }
+
+  async function openHistory() {
+    setView("history");
+    setHistoryLoading(true);
+    try {
+      const list = await listFloatingChatSessions();
+      setHistorySessions(list);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function loadSession(s: FloatingChatSession) {
+    cancelSpeech();
+    setMessages(s.messages);
+    setSessionId(s.id);
+    sessionCreatedAtRef.current = s.createdAt;
+    setError(null);
+    setCopiedIdx(null);
+    setSpeakingIdx(null);
+    lastSpokenIdxRef.current = s.messages.length - 1; // don't auto-speak loaded
+    setView("chat");
+    try {
+      localStorage.setItem(ACTIVE_SESSION_KEY, s.id);
+    } catch {}
+  }
+
+  async function removeSession(id: string) {
+    if (!window.confirm("Delete this chat? This can't be undone.")) return;
+    await deleteFloatingChatSession(id);
+    setHistorySessions((prev) => prev.filter((s) => s.id !== id));
+    if (sessionId === id) {
+      // We were viewing the deleted session — start fresh.
+      newChat();
+      setView("history");
+    }
   }
 
   useEffect(() => {
@@ -219,6 +357,30 @@ export function FloatingChat() {
               )}
             </div>
             <div className="ml-3 flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => (view === "history" ? setView("chat") : void openHistory())}
+                disabled={isStreaming}
+                title={view === "history" ? "Back to chat" : "Chat history"}
+                aria-label={view === "history" ? "Back to chat" : "Chat history"}
+                className={`rounded p-1 transition-colors hover:bg-background ${
+                  view === "history"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+              >
+                <History className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={newChat}
+                disabled={messages.length === 0 || isStreaming}
+                title="New chat — clear current conversation"
+                aria-label="New chat"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <MessageSquarePlus className="size-4" />
+              </button>
               {ttsSupported && (
                 <button
                   type="button"
@@ -254,7 +416,64 @@ export function FloatingChat() {
             </div>
           </div>
 
+          {/* History view */}
+          {view === "history" && (
+            <div className="flex-1 overflow-y-auto p-3">
+              {historyLoading ? (
+                <p className="mt-10 text-center text-sm text-muted-foreground">
+                  Loading chats…
+                </p>
+              ) : historySessions.length === 0 ? (
+                <p className="mt-10 text-center text-sm text-muted-foreground">
+                  No saved chats yet.
+                </p>
+              ) : (
+                <ul className="space-y-1">
+                  {historySessions.map((s) => (
+                    <li
+                      key={s.id}
+                      className={`group/h flex items-start gap-2 rounded-md p-2 hover:bg-muted ${
+                        s.id === sessionId ? "bg-muted/60" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => loadSession(s)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="line-clamp-2 text-sm font-medium">
+                          {s.title}
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {s.pageTitle ?? s.pagePath ?? "—"} ·{" "}
+                          {new Date(s.updatedAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}
+                          {" · "}
+                          {s.messages.length} msg
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void removeSession(s.id)}
+                        title="Delete chat"
+                        aria-label="Delete chat"
+                        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-destructive group-hover/h:opacity-100"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           {/* Messages */}
+          {view === "chat" && (
           <div
             ref={scrollRef}
             className="flex-1 overflow-y-auto p-4 space-y-3"
@@ -433,8 +652,10 @@ export function FloatingChat() {
               <p className="text-xs text-destructive text-center">{error}</p>
             )}
           </div>
+          )}
 
-          {/* Input */}
+          {/* Input — hidden in history view */}
+          {view === "chat" && (
           <form
             onSubmit={handleSubmit}
             className="border-t border-border p-3 flex gap-2 shrink-0"
@@ -456,6 +677,7 @@ export function FloatingChat() {
               Send
             </button>
           </form>
+          )}
         </div>
       )}
 
