@@ -1,0 +1,233 @@
+---
+title: "JavaScript Promises & async/await"
+tags: ["javascript", "async", "promises", "fundamentals", "interviews"]
+related: ["fetching-data", "modern-javascript", "javascript-closures"]
+---
+
+A **Promise** is an object that represents the eventual result of an asynchronous operation. It's in one of three states — `pending`, `fulfilled`, or `rejected` — and once it settles (fulfilled or rejected) it stays there forever.
+
+Promises are the foundation of every modern JS async API: `fetch`, file IO in Node, dynamic `import()`, `queueMicrotask`, all of it. `async`/`await` is just sugar on top.
+
+## The mental model
+
+A promise is a **pipe** that will deliver one value or one error at some point in the future. You can attach handlers (`.then`, `.catch`, `.finally`) before or after the value arrives — handlers added after the promise settles run on the next microtask.
+
+```js
+const p = new Promise((resolve, reject) => {
+  setTimeout(() => resolve("done"), 100);
+});
+
+p.then((v) => console.log(v));  // "done" after 100ms
+```
+
+Three rules that catch interviewers' attention:
+
+1. **Settled is final.** Calling `resolve()` and then `reject()` on the same promise — the second call is ignored.
+2. **`.then` returns a new promise.** That's why you can chain.
+3. **Returning from a `.then` handler unwraps promises.** `then(() => fetch(...))` returns a promise that resolves to the response, not to the inner promise.
+
+## async/await
+
+`async` means "this function returns a promise." `await` means "pause here until that promise settles, then unwrap it." Errors become regular `try`/`catch`.
+
+```js
+async function loadUser(id) {
+  try {
+    const res = await fetch(`/api/users/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error("loadUser failed:", err);
+    throw err;          // let callers decide
+  }
+}
+```
+
+Equivalent in raw promises:
+
+```js
+function loadUser(id) {
+  return fetch(`/api/users/${id}`)
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    })
+    .catch((err) => {
+      console.error("loadUser failed:", err);
+      throw err;
+    });
+}
+```
+
+`async`/`await` is what you write 95% of the time. Drop to raw `.then` chains only when you're composing many promises in flight at once or building a higher-order helper.
+
+## Promise combinators
+
+| Combinator | Settles when | Resolves to | Rejects when |
+|---|---|---|---|
+| `Promise.all([a, b, c])` | all fulfill | `[aVal, bVal, cVal]` | any rejects (immediately) |
+| `Promise.allSettled([a, b, c])` | all settle | `[{status, value/reason}, ...]` | never rejects |
+| `Promise.race([a, b, c])` | first one settles | first value | first rejection |
+| `Promise.any([a, b, c])` | first one fulfills | first fulfilled value | all reject (`AggregateError`) |
+
+Pick by intent:
+
+- **`all`** — "I need all of these or it's a failure." Fans out parallel work.
+- **`allSettled`** — "Run them all, tell me what happened to each." Collecting partial results.
+- **`race`** — "Whichever finishes first wins." Common pattern: race a fetch against a timeout.
+- **`any`** — "Take the first success, ignore rejections unless they all fail." Fallback fetches.
+
+```js
+// Timeout pattern with race:
+const withTimeout = (p, ms) =>
+  Promise.race([
+    p,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), ms)
+    ),
+  ]);
+
+const user = await withTimeout(fetch("/api/user"), 3000);
+```
+
+## The microtask queue
+
+Promise callbacks don't run immediately — they're queued as **microtasks**, which run after the current synchronous code finishes but **before** the next macrotask (`setTimeout`, IO, render).
+
+```js
+console.log("1");
+Promise.resolve().then(() => console.log("2"));
+setTimeout(() => console.log("3"), 0);
+console.log("4");
+// Output: 1, 4, 2, 3
+```
+
+Why this matters:
+
+- **`await`** is a microtask boundary — code after `await` runs in a fresh microtask.
+- A long synchronous chain of `.then`s can starve the render loop the same way a tight loop can. (Rare, but happens with thousands of promises.)
+- `queueMicrotask(fn)` is the lower-level primitive if you need it.
+
+## Common patterns
+
+### Sequential vs parallel
+
+```js
+// Sequential — slow if independent
+const a = await fetchA();
+const b = await fetchB();
+const c = await fetchC();
+
+// Parallel — kick off all three, then wait
+const [a, b, c] = await Promise.all([fetchA(), fetchB(), fetchC()]);
+```
+
+If `fetchB` doesn't depend on `a`, you're paying for nothing by awaiting in series. Interviewers love spotting this.
+
+### Error handling with `Promise.all`
+
+`Promise.all` rejects on the first failure and **doesn't wait** for the others (though they keep running — there's no built-in cancel). If you need partial results, use `allSettled`:
+
+```js
+const results = await Promise.allSettled([loadA(), loadB(), loadC()]);
+const ok = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+const errs = results.filter((r) => r.status === "rejected").map((r) => r.reason);
+```
+
+### Retries with exponential backoff
+
+```js
+async function withRetry(fn, { tries = 3, base = 200 } = {}) {
+  let lastErr;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (i < tries - 1) {
+        await new Promise((r) => setTimeout(r, base * 2 ** i));
+      }
+    }
+  }
+  throw lastErr;
+}
+```
+
+Pair with idempotency keys (see the [REST APIs note](./rest-apis)) so server-side retries don't double-charge anyone.
+
+### Promisify a callback API
+
+Old-style callback APIs (Node before promises, older browser APIs) wrap cleanly:
+
+```js
+const readFile = (path) =>
+  new Promise((resolve, reject) =>
+    fs.readFile(path, "utf8", (err, data) =>
+      err ? reject(err) : resolve(data)
+    )
+  );
+```
+
+Node's `util.promisify` does this automatically for any `(args..., cb)` style function.
+
+## Classic interview traps
+
+### Trap 1: forgotten `await`
+
+```js
+async function save(user) {
+  db.save(user);          // ← missing await; returns immediately
+  console.log("saved");   // logs before save actually completes
+}
+```
+
+Without `await`, errors from `db.save` become unhandled promise rejections. Same problem with `.then`-chains: forgetting to `return` the inner promise breaks the chain.
+
+### Trap 2: awaiting in a `.forEach`
+
+```js
+[1, 2, 3].forEach(async (id) => {
+  await save(id);        // forEach ignores the returned promise
+});
+console.log("done");     // runs before any save finishes
+```
+
+`forEach` doesn't know about async functions. Use `for...of` for sequential work, or `Promise.all(arr.map(...))` for parallel.
+
+### Trap 3: throwing inside `new Promise`
+
+```js
+new Promise((resolve, reject) => {
+  throw new Error("oops");   // becomes a rejection
+});
+```
+
+The constructor catches synchronous throws and converts them to rejections, which is good. But asynchronous throws inside `setTimeout` or callbacks **aren't** caught — they become unhandled errors. Always wrap async work in `try`/`catch` and call `reject(err)` yourself.
+
+### Trap 4: chaining without returning
+
+```js
+fetch("/a")
+  .then((res) => {
+    fetch("/b");           // ← not returned; outer chain doesn't wait
+  })
+  .then(() => console.log("done"));   // logs before /b finishes
+```
+
+Always `return` the inner promise. Or use `async`/`await`, where this isn't a footgun.
+
+## Likely interview questions
+
+- **"What's the difference between `Promise.all` and `Promise.allSettled`?"** `all` rejects on the first failure (returning a flat array of values on success); `allSettled` always fulfills with a `[{status, value/reason}]` array describing each. Use `allSettled` when you need partial results, `all` when one failure should abort the operation.
+- **"Explain microtasks vs macrotasks."** Microtasks (promise callbacks, `queueMicrotask`) drain completely after each task and before the next macrotask (`setTimeout`, IO, rendering). That's why a chain of resolved `.then`s prints before a `setTimeout(..., 0)`.
+- **"How do you cancel a promise?"** You don't — promises don't have a built-in cancel. Wrap with an `AbortController`: `fetch(url, { signal: controller.signal })`. The promise rejects with an `AbortError` when you call `controller.abort()`. See the [fetching note](./fetching-data) for the full pattern.
+- **"Why is `for await...of` useful?"** It iterates async iterables (e.g., a `ReadableStream` from `fetch`) one chunk at a time, awaiting each. Same idea as `for...of` but for streams of promises.
+- **"What's an unhandled rejection?"** A rejected promise with no `.catch` (or no `try`/`catch` around the `await`). Browsers fire `unhandledrejection`; Node logs and (in modern versions) crashes the process. Always handle errors at the top of an async chain.
+- **"Convert this callback to a promise."** Wrap with `new Promise((resolve, reject) => fn(arg, (err, val) => err ? reject(err) : resolve(val)))`. In Node, `util.promisify` does it for you.
+
+## Sources
+
+- [Using Promises — MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Using_promises)
+- [`async` and `await` — MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function)
+- [The microtask queue — Jake Archibald](https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/)
+- [JavaScript Async — Frontend Interview Handbook](https://www.frontendinterviewhandbook.com/javascript-questions)

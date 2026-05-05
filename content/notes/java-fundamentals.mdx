@@ -1,0 +1,357 @@
+---
+title: "Java Fundamentals for Full-Stack Interviews"
+tags: ["java", "jvm", "backend", "fundamentals", "interviews"]
+related: ["spring-boot", "rest-apis", "node-server-side"]
+---
+
+If your day-to-day is JavaScript/TypeScript and you've been pulled into a Java interview, this is the surface area worth refreshing. Aimed at modern Java (17 LTS / 21 LTS) — the era where most of the JS-vs-Java pain points were addressed (records, sealed types, switch expressions, virtual threads, var inference).
+
+For Spring Boot specifically, see the [Spring Boot note](./spring-boot).
+
+## What's actually different from JS/TS
+
+Coming from TypeScript, Java differs in five places that catch you off guard:
+
+1. **Static, nominal typing.** No structural subtyping — a `User` and a `Customer` with identical fields are not assignable. Identity matters; shape doesn't.
+2. **Everything lives in a class.** Top-level functions don't exist (until Java 25 previews them). Even `main` is a static method on a class.
+3. **Primitives vs objects.** `int`, `long`, `double`, `boolean`, `char` are value types; `Integer`, `Long`, `Double`, `Boolean`, `Character` are heap-allocated wrappers. They auto-box in most contexts but not all.
+4. **Checked exceptions.** Some exceptions must be declared in the method signature (`throws IOException`) or caught. There's no analog in JS.
+5. **No `null` safety in the type system.** `Optional<T>` exists but it's a runtime wrapper, not a `T | null` union. `null` can still appear anywhere a reference is expected.
+
+## Types & variables
+
+```java
+int count = 5;                  // primitive
+Integer boxed = 5;              // wrapper, autoboxed
+var name = "Maya";              // local type inference (Java 10+) — still static, just inferred
+final int MAX = 100;            // ~ const
+String s = null;                // any reference can be null
+```
+
+`var` is local-only — you can't use it on fields, method params, or return types. It's exactly TypeScript's `let` with inference.
+
+### Primitives + their wrappers
+
+| Primitive | Wrapper | Use when |
+|---|---|---|
+| `int` | `Integer` | Default integer (32-bit) |
+| `long` | `Long` | Beyond ±2.1 billion (literal: `42L`) |
+| `double` | `Double` | Default float (64-bit) |
+| `boolean` | `Boolean` | true/false |
+| `char` | `Character` | Single 16-bit UTF-16 code unit |
+| `byte` | `Byte` | Raw bytes |
+
+Wrappers are needed wherever generics or reference semantics are required: `List<Integer>`, `Optional<Long>`, nullable fields.
+
+### `==` vs `.equals()`
+
+```java
+String a = "hello";
+String b = "hello";
+String c = new String("hello");
+
+a == b        // true  (string interning, same reference)
+a == c        // false (different references)
+a.equals(c)   // true  (value equality)
+```
+
+Always use `.equals()` for objects. `==` checks reference identity. This includes `Integer`:
+
+```java
+Integer x = 200;
+Integer y = 200;
+x == y            // false! Outside the -128..127 cache
+x.equals(y)       // true
+```
+
+The `Integer` cache covers `-128..127`, so `==` accidentally works for small numbers and breaks for large ones. Don't rely on it.
+
+## Collections
+
+The four families that come up in interviews:
+
+| Interface | Common impls | Mental model |
+|---|---|---|
+| `List<E>` | `ArrayList`, `LinkedList` | Ordered, indexable, allows duplicates |
+| `Set<E>` | `HashSet`, `LinkedHashSet`, `TreeSet` | No duplicates |
+| `Map<K, V>` | `HashMap`, `LinkedHashMap`, `TreeMap` | Key → value |
+| `Queue<E>` / `Deque<E>` | `ArrayDeque`, `PriorityQueue` | FIFO / LIFO / priority |
+
+```java
+List<String> names = new ArrayList<>();
+names.add("Maya");
+names.add("Sam");
+
+Map<String, Integer> ages = new HashMap<>();
+ages.put("Maya", 30);
+ages.getOrDefault("Sam", 0);   // 0
+ages.computeIfAbsent("Sam", k -> 25);   // inserts 25, returns 25
+
+Set<Integer> seen = new HashSet<>(List.of(1, 2, 3));
+```
+
+**`List.of(...)`, `Set.of(...)`, `Map.of(...)`** create immutable collections. `Arrays.asList(...)` creates a fixed-size list (you can replace items but not add/remove). `new ArrayList<>(List.of(...))` if you need a mutable copy.
+
+**`HashMap` vs `LinkedHashMap` vs `TreeMap`:**
+- `HashMap` — O(1) lookup, no order guarantee.
+- `LinkedHashMap` — O(1) lookup, insertion order preserved (use this for LRU caches).
+- `TreeMap` — O(log n) lookup, sorted by key.
+
+### Iterating
+
+```java
+for (String n : names) System.out.println(n);                // for-each
+
+for (var entry : ages.entrySet()) {                          // map entries
+    System.out.println(entry.getKey() + "=" + entry.getValue());
+}
+
+names.forEach(System.out::println);                          // method reference
+```
+
+## Generics
+
+Generics are erased at runtime — `List<String>` and `List<Integer>` are the same `Class` at runtime. That has consequences (you can't `instanceof List<String>`, can't `new T[]`).
+
+```java
+public <T> T first(List<T> items) {
+    return items.isEmpty() ? null : items.get(0);
+}
+
+// Bounded
+public <T extends Comparable<T>> T max(List<T> items) {
+    T best = items.get(0);
+    for (T x : items) if (x.compareTo(best) > 0) best = x;
+    return best;
+}
+```
+
+### Wildcards: `? extends` vs `? super`
+
+```java
+List<? extends Number> readers;   // can READ Number out, can't add (covariant)
+List<? super Integer> writers;    // can WRITE Integer in, can only read as Object (contravariant)
+```
+
+PECS mnemonic: **Producer Extends, Consumer Super.** If the list produces values for you, use `? extends`; if it consumes values from you, use `? super`.
+
+## Records (Java 16+)
+
+The killer modern feature. A one-line immutable data class with auto-generated `equals`, `hashCode`, `toString`, and accessors.
+
+```java
+public record Point(int x, int y) {}
+
+Point p = new Point(3, 4);
+p.x();              // 3 — accessor, not p.x
+p.equals(new Point(3, 4));   // true
+p.toString();       // "Point[x=3, y=4]"
+```
+
+Records can have:
+- Custom methods (instance and static)
+- Compact constructors for validation: `public Point { if (x < 0) throw ... }`
+- Implementations of interfaces
+
+They cannot be subclassed and all components are final.
+
+Use a record any time you'd previously have written a "class with private fields, getters, equals, hashCode" — i.e., DTOs, value objects, return tuples.
+
+## Sealed types (Java 17+)
+
+Restrict who can extend / implement a type — gives you proper sum types.
+
+```java
+sealed interface Shape permits Circle, Square {}
+record Circle(double radius) implements Shape {}
+record Square(double side) implements Shape {}
+
+double area(Shape s) {
+    return switch (s) {
+        case Circle c -> Math.PI * c.radius() * c.radius();
+        case Square sq -> sq.side() * sq.side();
+    };
+}
+```
+
+The `switch` is exhaustive — adding a new permitted subtype forces you to handle it. This is the closest Java gets to TypeScript's discriminated unions.
+
+## Streams API
+
+Fluent, lazy operations on collections — Java's answer to map/filter/reduce.
+
+```java
+import java.util.stream.*;
+
+List<String> names = List.of("Maya", "Sam", "Ali", "Alex");
+
+List<String> short_ = names.stream()
+    .filter(n -> n.length() < 4)
+    .map(String::toUpperCase)
+    .toList();                          // [SAM, ALI]
+
+int total = names.stream()
+    .mapToInt(String::length)
+    .sum();                             // 14
+
+Map<Integer, List<String>> byLen = names.stream()
+    .collect(Collectors.groupingBy(String::length));
+```
+
+Three steps: source (collection / `Stream.of`), intermediate ops (`filter`, `map`, `flatMap`, `sorted`, `distinct`), terminal op (`toList`, `count`, `reduce`, `forEach`, `collect`). Streams are single-use — you can't iterate one twice.
+
+`parallelStream()` runs ops on the fork-join pool. Don't reach for it unless you've measured — the overhead exceeds the benefit on small collections.
+
+## Optional
+
+Wraps a value-or-absent. Don't use it for fields or method parameters; do use it as a return type when "no value" is a normal outcome.
+
+```java
+Optional<User> u = userRepo.findByEmail(email);
+
+u.ifPresent(user -> System.out.println(user.name()));
+String name = u.map(User::name).orElse("anonymous");
+User user = u.orElseThrow(() -> new NotFoundException(email));
+```
+
+Don't write `if (u.isPresent()) u.get()` — that's just a more verbose null check. Use `map` / `orElse` / `orElseThrow`.
+
+## Lambdas & method references
+
+```java
+Runnable r = () -> System.out.println("tick");
+Comparator<String> byLen = (a, b) -> a.length() - b.length();
+Comparator<String> byLen2 = Comparator.comparingInt(String::length);   // method reference
+```
+
+Functional interfaces (the lambda targets) live in `java.util.function`:
+- `Function<T, R>` — `T → R`
+- `Predicate<T>` — `T → boolean`
+- `Consumer<T>` — `T → void`
+- `Supplier<T>` — `() → T`
+- `BiFunction<T, U, R>`, `BinaryOperator<T>`, `UnaryOperator<T>`
+
+## Exceptions
+
+Two camps:
+
+- **Checked** (extend `Exception`): must be declared with `throws` or caught. Examples: `IOException`, `SQLException`. Compiler enforces handling.
+- **Unchecked** (extend `RuntimeException`): no compile-time enforcement. Examples: `NullPointerException`, `IllegalArgumentException`, `IllegalStateException`.
+
+```java
+try (BufferedReader r = Files.newBufferedReader(path)) {     // try-with-resources
+    return r.readLine();
+} catch (IOException e) {
+    throw new RuntimeException("Couldn't read " + path, e);  // chain the cause
+}
+```
+
+`try-with-resources` auto-closes anything implementing `AutoCloseable`.
+
+Modern guidance: use unchecked for everything except boundaries you really want callers to think about. Checked exceptions don't compose well across lambdas/streams.
+
+## `equals` and `hashCode`
+
+If you override `equals`, you must override `hashCode` so equal objects produce the same hash. Records do this for you. For plain classes:
+
+```java
+@Override public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof User u)) return false;   // pattern-match (Java 16+)
+    return Objects.equals(email, u.email);
+}
+@Override public int hashCode() {
+    return Objects.hash(email);
+}
+```
+
+Breaking this contract corrupts `HashSet` and `HashMap` — an object placed in a set under one hash can become unreachable if its hash changes.
+
+## Concurrency
+
+### Threads & ExecutorService
+
+Don't `new Thread()` directly. Use the executor framework:
+
+```java
+ExecutorService pool = Executors.newFixedThreadPool(4);
+Future<Integer> f = pool.submit(() -> heavyCompute());
+int result = f.get();           // blocks
+pool.shutdown();
+```
+
+### CompletableFuture
+
+Java's `Promise` analog:
+
+```java
+CompletableFuture
+    .supplyAsync(() -> fetchUser(id))
+    .thenApply(user -> user.name().toUpperCase())
+    .thenAccept(System.out::println)
+    .exceptionally(err -> { log.error("oops", err); return null; });
+```
+
+Composable: `thenCompose` (flatMap), `thenCombine` (zip two futures), `allOf` / `anyOf` (combinators). It's `Promise.then` with more knobs.
+
+### Virtual threads (Java 21+)
+
+The headline feature of Java 21. Cheap user-mode threads — you can spawn millions. Code stays synchronous and readable; the JVM handles scheduling on a small pool of OS threads.
+
+```java
+try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+    IntStream.range(0, 10_000).forEach(i ->
+        executor.submit(() -> {
+            Thread.sleep(Duration.ofSeconds(1));   // doesn't block an OS thread
+            return fetchUser(i);
+        })
+    );
+}
+```
+
+This is what makes "blocking I/O is fine again" true on the JVM — no callback hell, no async/await coloring. Every Spring Boot 3.2+ controller runs on virtual threads if you opt in.
+
+## Pattern matching & switch expressions
+
+```java
+String describe(Object o) {
+    return switch (o) {
+        case Integer i when i > 0 -> "positive int " + i;
+        case Integer i -> "non-positive int";
+        case String s -> "string of length " + s.length();
+        case null -> "null!";
+        default -> "something else";
+    };
+}
+```
+
+Switch as expression (returns a value), with arrow syntax (no fall-through), patterns (type + binding), and guards (`when`). All arrived between Java 14 and 21.
+
+## Common interview gotchas
+
+- **Mutable static fields** — global state, not thread-safe. Use `private static final` constants only.
+- **Default args don't exist.** Overload methods or use a builder.
+- **String concatenation in loops** — use `StringBuilder`. (Modern JIT will sometimes optimize, but not always.)
+- **`HashMap` resize** — default load factor 0.75; sizing it up-front (`new HashMap<>(expectedSize * 4 / 3)`) avoids rehashes.
+- **Iterator invalidation** — modifying a collection while iterating it throws `ConcurrentModificationException`. Use `Iterator.remove()` or copy.
+- **NPE on autoboxing** — `Integer x = map.get(missingKey); int y = x;` throws NPE because `null` can't unbox.
+
+## Likely interview questions
+
+- **"Difference between `==` and `.equals()`?"** `==` is reference identity; `.equals()` is value equality. Override `.equals()` (and `.hashCode()` together) for value comparisons. Records do this for you.
+- **"`HashMap` vs `Hashtable` vs `ConcurrentHashMap`?"** `Hashtable` is legacy and synchronized (don't use). `HashMap` is unsynchronized — fast, single-threaded. `ConcurrentHashMap` is thread-safe with fine-grained locking and is the right choice for shared maps.
+- **"Checked vs unchecked exceptions — when to use which?"** Checked when callers must respond to a recoverable failure (rare in practice); unchecked for programming errors and cases where forcing every caller to write `throws` would be noise. Modern Java leans heavily unchecked.
+- **"What's autoboxing and where does it bite?"** Auto-conversion between `int` ↔ `Integer`. Bites: NPE when unboxing a `null` wrapper; `==` comparing wrappers compares references; performance penalty in hot loops.
+- **"What's a record? When would you use it?"** Immutable data carrier with auto-generated `equals`, `hashCode`, `toString`, accessors. Use for DTOs, value objects, multi-value returns. Replaces 90% of "POJO with getters" code.
+- **"Difference between `extends` and `super` in generics?"** PECS — Producer Extends (read-only), Consumer Super (write-only). `List<? extends Number>` lets you read `Number`s out; `List<? super Integer>` lets you put `Integer`s in.
+- **"What are virtual threads?"** Java 21+ user-mode threads scheduled by the JVM. Cheap (millions OK), block-friendly, no async coloring. Default for Spring Boot 3.2+ web requests when enabled.
+- **"How does `Optional` differ from null?"** It's an explicit "may have a value" wrapper with combinators (`map`, `orElse`, `orElseThrow`). Use only as a return type — not for fields or parameters.
+- **"What does `final` mean on a class / method / variable?"** Class: can't be subclassed. Method: can't be overridden. Variable: can't be reassigned (the reference is fixed; the object it points to may still mutate).
+
+## Sources
+
+- [The Java Tutorials (Oracle)](https://docs.oracle.com/javase/tutorial/)
+- [Java Language Updates — Oracle](https://docs.oracle.com/en/java/javase/21/language/index.html)
+- [Effective Java, 3rd ed. — Joshua Bloch](https://www.oreilly.com/library/view/effective-java-3rd/9780134686097/)
+- [JEP 444: Virtual Threads](https://openjdk.org/jeps/444)
+- [Modern Java in Action](https://www.manning.com/books/modern-java-in-action)

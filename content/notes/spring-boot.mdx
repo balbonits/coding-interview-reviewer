@@ -1,0 +1,446 @@
+---
+title: "Spring Boot for Full-Stack Interviews"
+tags: ["java", "spring", "spring-boot", "backend", "interviews"]
+related: ["java-fundamentals", "rest-apis", "soap-and-rpc-styles"]
+---
+
+Spring Boot is the dominant Java backend framework. If your interview involves Java APIs, microservices, or anything resembling "the backend half of a full-stack role," it's almost certainly Spring Boot. This note covers the surface area you actually need to discuss: what Spring Boot is, dependency injection, REST controllers, Spring Data JPA, validation, exception handling, profiles, security, and testing.
+
+For Java language features, see the [Java fundamentals note](./java-fundamentals).
+
+## What Spring Boot actually is
+
+Spring Boot = Spring Framework + opinionated defaults + auto-configuration + embedded server + curated starter dependencies. The pitch:
+
+- **Auto-configuration** — adds beans based on the classpath. Have `H2` on the classpath? You get a `DataSource` bean and a JPA `EntityManager` for free, no XML.
+- **Starter dependencies** — `spring-boot-starter-web`, `-data-jpa`, `-security`, `-test`, etc. One dependency pulls in a coherent set of compatible versions.
+- **Embedded server** — Tomcat/Jetty/Undertow built in. `mvn spring-boot:run` and you have an HTTP server on `:8080`. No WAR files, no external app server.
+- **Production-ready** — Spring Boot Actuator gives you `/health`, `/metrics`, `/info` endpoints out of the box.
+
+A minimal app:
+
+```java
+@SpringBootApplication
+public class App {
+    public static void main(String[] args) {
+        SpringApplication.run(App.class, args);
+    }
+}
+```
+
+`@SpringBootApplication` is three annotations bundled:
+- `@Configuration` — this class can declare `@Bean`s.
+- `@EnableAutoConfiguration` — turn on auto-config.
+- `@ComponentScan` — scan this package and below for `@Component`/`@Service`/`@Repository`/`@Controller`.
+
+## Project structure
+
+```
+src/main/java/com/example/app/
+    App.java                          # main class
+    user/
+        User.java                     # @Entity
+        UserRepository.java           # interface extends JpaRepository
+        UserService.java              # @Service
+        UserController.java           # @RestController
+        UserDto.java                  # request/response shapes
+src/main/resources/
+    application.yml                   # config
+    application-prod.yml              # profile-specific config
+    db/migration/V1__init.sql         # Flyway migrations (if used)
+src/test/java/com/example/app/
+    user/UserControllerTest.java
+build.gradle.kts                      # or pom.xml
+```
+
+Spring scans starting from the package containing `@SpringBootApplication`. Keep your main class at the root package so everything below is auto-discovered.
+
+## Dependency injection
+
+The whole point of Spring is that your code declares "I need a `UserRepository`" and Spring wires it up. Use **constructor injection** — it's testable, immutable, and flagged at startup if a dependency is missing.
+
+```java
+@Service
+public class UserService {
+    private final UserRepository repo;
+    private final EmailClient email;
+
+    // No @Autowired needed if there's exactly one constructor (Spring 4.3+)
+    public UserService(UserRepository repo, EmailClient email) {
+        this.repo = repo;
+        this.email = email;
+    }
+
+    public User register(String emailAddr, String name) {
+        User u = repo.save(new User(emailAddr, name));
+        email.sendWelcome(u);
+        return u;
+    }
+}
+```
+
+Field injection (`@Autowired private UserRepository repo;`) and setter injection both still work but are discouraged. Constructor injection plays well with `final`, makes test-double substitution trivial, and forces you to confront long parameter lists (a code smell that field injection hides).
+
+### Bean scopes
+
+| Scope | Lifecycle |
+|---|---|
+| `singleton` (default) | One instance per Spring context |
+| `prototype` | New instance every injection |
+| `request` | One per HTTP request (web only) |
+| `session` | One per HTTP session (web only) |
+
+99% of beans are singletons. Reach for `prototype` only when you genuinely need fresh state every time (rare).
+
+## REST controllers
+
+```java
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    private final UserService service;
+    public UserController(UserService service) { this.service = service; }
+
+    @GetMapping
+    public List<UserDto> list(@RequestParam(defaultValue = "20") int limit) {
+        return service.list(limit).stream().map(UserDto::from).toList();
+    }
+
+    @GetMapping("/{id}")
+    public UserDto get(@PathVariable long id) {
+        return UserDto.from(service.findById(id));   // throws NotFoundException → 404
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserDto create(@Valid @RequestBody CreateUserRequest req) {
+        return UserDto.from(service.create(req));
+    }
+
+    @PatchMapping("/{id}")
+    public UserDto update(@PathVariable long id, @RequestBody UpdateUserRequest req) {
+        return UserDto.from(service.update(id, req));
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable long id) {
+        service.delete(id);
+    }
+}
+```
+
+Mapping annotations:
+
+| Annotation | HTTP verb |
+|---|---|
+| `@GetMapping` | GET |
+| `@PostMapping` | POST |
+| `@PutMapping` | PUT |
+| `@PatchMapping` | PATCH |
+| `@DeleteMapping` | DELETE |
+| `@RequestMapping` | any (set with `method = ...`) |
+
+Param annotations:
+- `@PathVariable` — `/users/{id}` → `@PathVariable long id`
+- `@RequestParam` — `?limit=20` → `@RequestParam int limit`
+- `@RequestBody` — JSON body → `@RequestBody CreateUserRequest req` (Jackson deserializes)
+- `@RequestHeader`, `@CookieValue`, `@RequestPart` (multipart)
+
+`@RestController` = `@Controller` + `@ResponseBody` on every method, so return values are serialized to JSON automatically.
+
+## Spring Data JPA
+
+```java
+@Entity
+@Table(name = "users")
+public class User {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String email;
+
+    @Column(nullable = false)
+    private String name;
+
+    @CreationTimestamp
+    private Instant createdAt;
+
+    // JPA needs a no-arg constructor + getters/setters (or use Lombok / records)
+}
+```
+
+```java
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);              // derived query
+    List<User> findByNameContainingIgnoreCase(String q);
+
+    @Query("SELECT u FROM User u WHERE u.createdAt > :since")
+    List<User> recentSince(@Param("since") Instant since);
+}
+```
+
+`JpaRepository<Entity, IdType>` gives you `findAll`, `findById`, `save`, `saveAll`, `delete`, `count`, paging, sorting — for free. **Derived queries** parse the method name (`findByEmail` → `WHERE email = ?`). For anything complex, drop into `@Query` with JPQL or native SQL.
+
+### Common JPA gotchas
+
+- **N+1 queries.** Loading a `User` and accessing `user.getOrders()` lazily fires one query per user. Fix with `@EntityGraph`, fetch joins (`JOIN FETCH`), or DTO projection.
+- **`save()` for updates.** It does an upsert by ID. `update` isn't a thing — fetch, mutate, save (or rely on dirty checking inside `@Transactional` boundaries).
+- **`@Transactional` boundaries** — required for write methods. Lazy-loaded relations only work *inside* a transaction. A common bug is "fetch in service, traverse in controller after the tx closes" → `LazyInitializationException`.
+- **`equals`/`hashCode` on entities** — use the business key (e.g., email), not the auto-generated id, since the id is null before `save`.
+
+## Configuration
+
+`application.yml` (or `.properties`) drives everything. Externalize anything environment-specific.
+
+```yaml
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/myapp
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate          # never `update` in prod; use migrations
+    properties.hibernate.format_sql: true
+
+logging:
+  level:
+    org.springframework.web: INFO
+    com.example: DEBUG
+
+app:
+  feature-flags:
+    new-checkout: true
+```
+
+Bind to a typed config class:
+
+```java
+@ConfigurationProperties(prefix = "app.feature-flags")
+public record FeatureFlags(boolean newCheckout) {}
+```
+
+```java
+@Service
+public class CheckoutService {
+    public CheckoutService(FeatureFlags flags) { ... }
+}
+```
+
+### Profiles
+
+```yaml
+# application-prod.yml — only loaded when SPRING_PROFILES_ACTIVE=prod
+spring:
+  datasource.url: jdbc:postgresql://prod-db:5432/myapp
+logging.level.com.example: WARN
+```
+
+Activate with `--spring.profiles.active=prod`, env var `SPRING_PROFILES_ACTIVE=prod`, or in code (`@Profile("prod")` on a bean).
+
+## Validation
+
+Use Jakarta Bean Validation (`jakarta.validation.constraints`). Spring runs it when you mark a `@RequestBody` with `@Valid`.
+
+```java
+public record CreateUserRequest(
+    @NotBlank @Email String email,
+    @NotBlank @Size(min = 2, max = 50) String name,
+    @Min(13) int age
+) {}
+```
+
+```java
+@PostMapping
+public UserDto create(@Valid @RequestBody CreateUserRequest req) { ... }
+```
+
+Validation failures throw `MethodArgumentNotValidException`, which Spring translates to a 400 with a JSON body listing field errors (or you can customize via `@ControllerAdvice`).
+
+## Exception handling
+
+Centralize in a `@ControllerAdvice`:
+
+```java
+@RestControllerAdvice
+public class ApiExceptionHandler {
+
+    @ExceptionHandler(NotFoundException.class)
+    public ResponseEntity<ApiError> notFound(NotFoundException e) {
+        return ResponseEntity.status(404).body(new ApiError("NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiError> validation(MethodArgumentNotValidException e) {
+        var fields = e.getBindingResult().getFieldErrors().stream()
+            .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
+            .toList();
+        return ResponseEntity.badRequest().body(new ApiError("VALIDATION", "invalid input", fields));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiError> fallback(Exception e) {
+        log.error("unhandled", e);
+        return ResponseEntity.status(500).body(new ApiError("INTERNAL", "something broke"));
+    }
+}
+```
+
+This is your one-stop shop for converting domain exceptions into HTTP responses. Pairs nicely with [RFC 9457 Problem Details](./rest-apis) — there's `spring-web`'s `ProblemDetail` class as of Spring 6.
+
+## Spring Security (the 80% you need)
+
+The mental model: a chain of filters runs before your controllers. They authenticate (figure out *who* you are) and authorize (decide what you're allowed to do).
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+            .csrf(csrf -> csrf.disable())                           // for stateless JWT APIs
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/auth/**", "/health").permitAll()
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated()
+            )
+            .oauth2ResourceServer(oauth -> oauth.jwt())             // accept JWTs
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .build();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+```
+
+Three things interviewers care about:
+
+1. **`PasswordEncoder` is required.** `BCryptPasswordEncoder` is the default; never store plaintext.
+2. **Stateless JWT vs session cookies.** APIs typically go stateless: client sends `Authorization: Bearer <jwt>`, Spring validates it via `oauth2ResourceServer().jwt()`. Cookie-based sessions still work for traditional web apps.
+3. **Method-level security** with `@PreAuthorize("hasRole('ADMIN')")` or `@PreAuthorize("#userId == authentication.principal.id")` for fine-grained checks.
+
+## Spring Boot Actuator
+
+Adds a set of operational endpoints. Add the starter, expose what you want:
+
+```yaml
+management:
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.show-details: when_authorized
+```
+
+- `GET /actuator/health` — liveness/readiness
+- `GET /actuator/metrics/jvm.memory.used` — Micrometer metrics
+- `GET /actuator/prometheus` — scrape format
+
+Pair with Micrometer + Prometheus + Grafana for production observability. Interviewers ask about it as a stand-in for "do you think about ops?".
+
+## Testing
+
+Three flavors of test:
+
+### Unit (no Spring at all)
+
+```java
+class UserServiceTest {
+    @Test void registers_a_new_user() {
+        var repo = mock(UserRepository.class);
+        var email = mock(EmailClient.class);
+        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        var service = new UserService(repo, email);
+
+        var u = service.register("a@b.com", "Maya");
+
+        assertEquals("a@b.com", u.getEmail());
+        verify(email).sendWelcome(u);
+    }
+}
+```
+
+Constructor injection makes this trivial — no Spring context, just plain Mockito.
+
+### Slice tests
+
+Faster than full-context tests; load only one layer.
+
+- `@WebMvcTest(UserController.class)` — controllers + Jackson + Spring MVC, no DB.
+- `@DataJpaTest` — JPA + an in-memory DB, no controllers.
+- `@JsonTest` — Jackson serializers/deserializers in isolation.
+
+```java
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    @Autowired MockMvc mvc;
+    @MockBean UserService service;
+
+    @Test void returns_404_when_user_missing() throws Exception {
+        when(service.findById(99)).thenThrow(new NotFoundException("nope"));
+        mvc.perform(get("/api/users/99"))
+            .andExpect(status().isNotFound());
+    }
+}
+```
+
+### Integration
+
+```java
+@SpringBootTest
+@AutoConfigureMockMvc
+@Testcontainers
+class IntegrationTest {
+    @Container static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
+    // ...
+}
+```
+
+`@SpringBootTest` boots the full app context. Combine with **Testcontainers** for real Postgres/Redis/Kafka in tests instead of H2 mocks. Slower but high-fidelity — the standard for senior interviews.
+
+## Microservices considerations
+
+Common topics if the role is microservice-flavored:
+
+- **Spring Cloud** — config server (centralized config), service discovery (Eureka, Consul), API gateway (Spring Cloud Gateway), circuit breakers (Resilience4j).
+- **Messaging** — `spring-kafka`, `spring-amqp` (RabbitMQ). Producer / consumer patterns, idempotency, dead-letter queues.
+- **Distributed tracing** — Micrometer Tracing + OpenTelemetry. Trace IDs propagate across services automatically.
+- **Saga / outbox patterns** — handling distributed transactions without 2PC.
+
+## Common interview gotchas
+
+- **`@Transactional` self-invocation.** A method calling another `@Transactional` method on `this` bypasses the proxy → no transaction. Solution: split into two beans, or use `AopContext.currentProxy()`.
+- **Lazy loading outside a transaction** — `LazyInitializationException`. Either use eager loading, fetch joins, or DTO projection inside the transactional service layer.
+- **Field injection in tests** — can't construct the bean without Spring. Use constructor injection so unit tests don't need `@SpringBootTest`.
+- **`@Component` scope confusion** — `@Service`, `@Repository`, `@Controller` are all `@Component` with semantic intent. Spring treats them the same for scanning.
+- **Returning entities directly from controllers** — leaks DB structure into your API contract. Map to DTOs (records work great).
+- **Forgetting `@EnableScheduling` / `@EnableAsync`** — `@Scheduled` and `@Async` are no-ops without the enable annotation on a `@Configuration` class.
+
+## Likely interview questions
+
+- **"What is Spring Boot vs Spring Framework?"** Spring Framework provides DI, web MVC, transactions, etc. Spring Boot wraps it with auto-configuration, starter dependencies, an embedded server, and production-ready Actuator endpoints. You can have Spring without Boot; you can't have Boot without Spring.
+- **"Why prefer constructor injection?"** Immutability (`final` fields), explicit dependencies, fail-fast at startup if missing, and test-friendliness — you can construct the bean without any Spring context.
+- **"How does `@Transactional` work?"** Spring wraps the bean in a proxy; calling a `@Transactional` method goes through the proxy, which opens a transaction, calls the method, commits or rolls back. Self-invocation (`this.foo()`) bypasses the proxy and the annotation.
+- **"What's the difference between `@Component`, `@Service`, `@Repository`, `@Controller`?"** Functionally the same — all are `@Component` (Spring scans and creates a bean). `@Repository` adds JDBC exception translation; `@Controller` is for MVC; `@Service` is purely semantic.
+- **"How do you handle exceptions globally?"** A `@RestControllerAdvice` (or `@ControllerAdvice`) class with `@ExceptionHandler` methods that return `ResponseEntity<ApiError>`. One place to translate domain exceptions to HTTP responses.
+- **"How does Spring Data JPA generate queries from method names?"** It parses the method signature: `findByEmailAndStatusOrderByCreatedAtDesc` becomes a query with `WHERE email = ? AND status = ? ORDER BY created_at DESC`. Anything beyond the parser's grammar uses `@Query`.
+- **"What's auto-configuration?"** Conditional `@Configuration` classes shipped with starters that activate when certain classes are on the classpath and certain properties are set. `@ConditionalOnClass`, `@ConditionalOnProperty` are the building blocks. `--debug` shows you the auto-configuration report.
+- **"How do you secure a REST API?"** `SecurityFilterChain` bean, JWT or OAuth2 resource server for stateless APIs, `BCryptPasswordEncoder` for credentials, `@PreAuthorize` for fine-grained checks, never disable CSRF except on stateless API endpoints.
+- **"How do you write a fast test for a controller?"** `@WebMvcTest(UserController.class)` slices the context to just web layer + Jackson, mocks the service with `@MockBean`, drives requests through `MockMvc`. Boots in seconds, not minutes.
+- **"What's the N+1 problem in JPA and how do you fix it?"** Loading a parent entity fires one query, then accessing each child relation fires another query per parent (N total). Fix with `JOIN FETCH` in JPQL, `@EntityGraph`, or by projecting directly into a DTO.
+
+## Sources
+
+- [Spring Boot Reference Documentation](https://docs.spring.io/spring-boot/index.html)
+- [Spring Framework Reference](https://docs.spring.io/spring-framework/reference/)
+- [Spring Data JPA Reference](https://docs.spring.io/spring-data/jpa/reference/)
+- [Spring Security Reference](https://docs.spring.io/spring-security/reference/)
+- [Testcontainers for Java](https://java.testcontainers.org/)
+- [Baeldung Spring Boot tutorials](https://www.baeldung.com/spring-boot)

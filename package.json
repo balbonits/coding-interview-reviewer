@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint",
     "test:exercises": "node scripts/verify-exercises.mjs",
+    "test:e2e": "playwright test",
     "verify": "npm run test:exercises && npm run build"
   },
   "dependencies": {
@@ -41,8 +42,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^29.1.0",
     "server-only": "^0.0.1",
     "tailwindcss": "^4",

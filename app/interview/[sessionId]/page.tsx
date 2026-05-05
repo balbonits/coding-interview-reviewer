@@ -14,6 +14,8 @@ import Link from "next/link";
 import {
   BookmarkPlus,
   Check,
+  ChevronDown,
+  Code2,
   Copy,
   Download,
   Mic,
@@ -24,6 +26,9 @@ import {
 } from "lucide-react";
 import { MermaidBlock } from "@/components/MermaidBlock";
 import { QuizMeButton } from "@/components/QuizMeButton";
+import { CodeSandbox, type SubmittedFile } from "@/components/CodeSandbox";
+import { JavaSandbox, type JavaSubmission } from "@/components/JavaSandbox";
+import type { SandpackTemplate } from "@/lib/exercises";
 import { Button } from "@/components/ui/button";
 import { InlineRename } from "@/components/ui/inline-rename";
 import { Textarea } from "@/components/ui/textarea";
@@ -86,6 +91,10 @@ export default function InterviewSessionPage({
   const [savingNote, setSavingNote] = useState(false);
   const [noteJustSaved, setNoteJustSaved] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [javaSandboxOpen, setJavaSandboxOpen] = useState(false);
+  const [sandboxMenuOpen, setSandboxMenuOpen] = useState(false);
+  const sandboxMenuRef = useRef<HTMLDivElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const kickedOffRef = useRef(false);
   const recognitionRef = useRef<RecognitionHandle | null>(null);
@@ -94,6 +103,27 @@ export default function InterviewSessionPage({
   useEffect(() => {
     autoSpeakRef.current = autoSpeak;
   }, [autoSpeak]);
+
+  useEffect(() => {
+    if (!sandboxMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (
+        sandboxMenuRef.current &&
+        !sandboxMenuRef.current.contains(e.target as Node)
+      ) {
+        setSandboxMenuOpen(false);
+      }
+    }
+    function onKey(e: globalThis.KeyboardEvent) {
+      if (e.key === "Escape") setSandboxMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [sandboxMenuOpen]);
 
   useEffect(() => {
     setSttSupported(isSpeechRecognitionSupported());
@@ -406,6 +436,29 @@ export default function InterviewSessionPage({
     }
   }
 
+  function handleSandboxSubmit(
+    files: SubmittedFile[],
+    template: SandpackTemplate,
+  ) {
+    if (!files.length) {
+      setSandboxOpen(false);
+      return;
+    }
+    const block = formatSandboxSubmission(files, template);
+    setInput((prev) => (prev ? `${prev.trimEnd()}\n\n${block}` : block));
+    setSandboxOpen(false);
+  }
+
+  function handleJavaSubmit(sub: JavaSubmission) {
+    if (!sub.code.trim()) {
+      setJavaSandboxOpen(false);
+      return;
+    }
+    const block = formatJavaSubmission(sub);
+    setInput((prev) => (prev ? `${prev.trimEnd()}\n\n${block}` : block));
+    setJavaSandboxOpen(false);
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!input.trim() || isStreaming || !session) return;
@@ -666,6 +719,22 @@ export default function InterviewSessionPage({
         </div>
       )}
 
+      {!session.endedAt && sandboxOpen && (
+        <CodeSandbox
+          onSubmit={handleSandboxSubmit}
+          onCancel={() => setSandboxOpen(false)}
+          submitLabel="Attach to message"
+        />
+      )}
+
+      {!session.endedAt && javaSandboxOpen && (
+        <JavaSandbox
+          onSubmit={handleJavaSubmit}
+          onCancel={() => setJavaSandboxOpen(false)}
+          submitLabel="Attach to message"
+        />
+      )}
+
       {!session.endedAt && (
         <form onSubmit={handleSubmit} className="space-y-2">
           <Textarea
@@ -691,6 +760,87 @@ export default function InterviewSessionPage({
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</p>
             <div className="flex items-center gap-2">
+              <div ref={sandboxMenuRef} className="relative">
+                <Button
+                  type="button"
+                  variant={
+                    sandboxOpen || javaSandboxOpen ? "default" : "outline"
+                  }
+                  size="sm"
+                  onClick={() => {
+                    if (sandboxOpen) {
+                      setSandboxOpen(false);
+                      return;
+                    }
+                    if (javaSandboxOpen) {
+                      setJavaSandboxOpen(false);
+                      return;
+                    }
+                    setSandboxMenuOpen((o) => !o);
+                  }}
+                  disabled={isStreaming || savingNote}
+                  title={
+                    sandboxOpen
+                      ? "Close JS sandbox"
+                      : javaSandboxOpen
+                        ? "Close Java sandbox"
+                        : "Open a code sandbox"
+                  }
+                  aria-expanded={sandboxMenuOpen}
+                  aria-haspopup="menu"
+                >
+                  <Code2 className="size-4" />
+                  <span className="hidden sm:inline">
+                    {sandboxOpen
+                      ? "Close JS"
+                      : javaSandboxOpen
+                        ? "Close Java"
+                        : "Sandbox"}
+                  </span>
+                  {!sandboxOpen && !javaSandboxOpen && (
+                    <ChevronDown className="size-3.5 opacity-70" />
+                  )}
+                </Button>
+
+                {sandboxMenuOpen && !sandboxOpen && !javaSandboxOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Choose a sandbox"
+                    className="absolute right-0 bottom-full z-50 mb-2 w-48 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg"
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setSandboxMenuOpen(false);
+                        setJavaSandboxOpen(false);
+                        setSandboxOpen(true);
+                      }}
+                      className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                    >
+                      <span className="font-medium">JS / TS / React</span>
+                      <span className="text-xs text-muted-foreground">
+                        Sandpack — runs in browser
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setSandboxMenuOpen(false);
+                        setSandboxOpen(false);
+                        setJavaSandboxOpen(true);
+                      }}
+                      className="flex w-full flex-col items-start gap-0.5 border-t border-border px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
+                    >
+                      <span className="font-medium">Java</span>
+                      <span className="text-xs text-muted-foreground">
+                        javac + java via local JDK
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
               {sttSupported && (
                 <Button
                   type="button"
@@ -726,6 +876,78 @@ export default function InterviewSessionPage({
       )}
     </div>
   );
+}
+
+function fenceLangFor(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  switch (ext) {
+    case "tsx":
+      return "tsx";
+    case "jsx":
+      return "jsx";
+    case "ts":
+      return "ts";
+    case "js":
+      return "js";
+    case "css":
+      return "css";
+    case "html":
+      return "html";
+    case "json":
+      return "json";
+    default:
+      return "";
+  }
+}
+
+function formatSandboxSubmission(
+  files: SubmittedFile[],
+  template: SandpackTemplate,
+): string {
+  const header = `[Submitted via code sandbox — template: ${template}]`;
+  const blocks = files
+    .filter((f) => f.code.trim().length > 0)
+    .map((f) => {
+      const lang = fenceLangFor(f.path);
+      return `**\`${f.path}\`**\n\`\`\`${lang}\n${f.code.replace(/\s+$/, "")}\n\`\`\``;
+    });
+  return [header, ...blocks].join("\n\n");
+}
+
+function formatJavaSubmission(sub: JavaSubmission): string {
+  const className =
+    sub.code.match(/public\s+class\s+(\w+)/)?.[1] ??
+    sub.code.match(/class\s+(\w+)/)?.[1] ??
+    "Main";
+  const parts: string[] = [`[Submitted via Java sandbox]`];
+  parts.push(
+    `**\`${className}.java\`**\n\`\`\`java\n${sub.code.replace(/\s+$/, "")}\n\`\`\``,
+  );
+  if (sub.stdin.trim()) {
+    parts.push(`**Stdin:**\n\`\`\`\n${sub.stdin.replace(/\s+$/, "")}\n\`\`\``);
+  }
+  if (sub.lastResult) {
+    const r = sub.lastResult;
+    const tag = r.timedOut
+      ? "timed out"
+      : r.phase === "compile" && !r.ok
+        ? "compile error"
+        : r.exitCode === 0
+          ? `exit 0 in ${r.durationMs}ms`
+          : `exit ${r.exitCode ?? "?"} in ${r.durationMs}ms`;
+    const out = (r.stdout || "").trim();
+    const err = (r.stderr || "").trim();
+    const body = [
+      out && `stdout:\n${out}`,
+      err && `stderr:\n${err}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    parts.push(
+      `**Last run** (${tag}):\n\`\`\`\n${body || "(no output)"}\n\`\`\``,
+    );
+  }
+  return parts.join("\n\n");
 }
 
 function Message({

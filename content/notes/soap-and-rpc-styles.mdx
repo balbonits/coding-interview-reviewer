@@ -1,0 +1,254 @@
+---
+title: "SOAP, XML-RPC, JSON-RPC, tRPC — Non-REST API Styles"
+tags: ["soap", "rpc", "xml-rpc", "json-rpc", "trpc", "api", "interviews"]
+related: ["rest-apis", "apis-cheat-sheet", "graphql"]
+---
+
+REST won the public API world, but you'll still meet other styles in enterprise integrations, financial / government systems, and internal tooling. Interviewers ask about them mostly to test breadth — "have you seen this and do you know when it would beat REST?". This note hits the four you're likely to encounter: **SOAP**, **XML-RPC**, **JSON-RPC**, and **tRPC**. For gRPC, see the [APIs cheat sheet](./apis-cheat-sheet).
+
+## The big-picture distinction: resources vs. procedures
+
+REST is **resource-oriented** — you act on nouns (`/users/42`) using a fixed verb set (GET/POST/PUT/PATCH/DELETE). RPC styles are **procedure-oriented** — you call named functions (`getUser(42)`, `placeOrder(items)`) over the wire. That difference drives almost everything else.
+
+| | REST | RPC styles |
+|---|---|---|
+| **Mental model** | "Resources I can manipulate" | "Functions I can call" |
+| **URL shape** | `/users/42` (noun) | `/api` (single endpoint) or `/api/getUser` (verb) |
+| **Discoverability** | OpenAPI spec, hypermedia | WSDL (SOAP), schema (gRPC/tRPC), or none |
+| **Caching** | HTTP-native (GET + ETag/Cache-Control) | Hard — every call is a POST |
+| **Best for** | Public CRUD, browser-native caching | Internal services, action-heavy domains, typed clients |
+
+If your domain is "things and CRUD on them" → REST. If it's "verbs and side effects" (banking, RPC pipelines, scientific instruments) → an RPC style is often a better fit.
+
+## SOAP
+
+**Simple Object Access Protocol** — except it isn't simple. SOAP is a strict, XML-based protocol developed in the late 1990s and standardized as a W3C Recommendation. It's still alive in **banking, insurance, healthcare (HL7), payments (some legacy gateways), telecom (TM Forum), and government** because those domains lock contracts in stone and ride them for decades.
+
+### The envelope
+
+Every SOAP message is an XML document with this shape:
+
+```xml
+<?xml version="1.0"?>
+<soap:Envelope
+    xmlns:soap="http://www.w3.org/2003/05/soap-envelope"
+    xmlns:bank="https://example.com/bank">
+  <soap:Header>
+    <bank:Auth>
+      <bank:Token>abc123</bank:Token>
+    </bank:Auth>
+  </soap:Header>
+  <soap:Body>
+    <bank:GetBalance>
+      <bank:AccountId>42</bank:AccountId>
+    </bank:GetBalance>
+  </soap:Body>
+</soap:Envelope>
+```
+
+Three parts:
+
+- **Envelope** — the outer wrapper.
+- **Header** (optional) — metadata: auth, transaction IDs, message routing, encryption.
+- **Body** — the actual call (or a `<soap:Fault>` on errors).
+
+Faults look like:
+
+```xml
+<soap:Body>
+  <soap:Fault>
+    <soap:Code><soap:Value>soap:Sender</soap:Value></soap:Code>
+    <soap:Reason><soap:Text>Account not found</soap:Text></soap:Reason>
+  </soap:Fault>
+</soap:Body>
+```
+
+### WSDL — the contract
+
+A SOAP service publishes a **WSDL** (Web Services Description Language) document — itself XML — describing every operation, its inputs, outputs, and faults. Tooling (`wsdl2java`, `wsdl.exe`, Python's `zeep`) generates strongly-typed client stubs from the WSDL, so you call `client.getBalance(42)` instead of building XML by hand.
+
+```xml
+<wsdl:portType name="BankPort">
+  <wsdl:operation name="GetBalance">
+    <wsdl:input message="tns:GetBalanceRequest"/>
+    <wsdl:output message="tns:GetBalanceResponse"/>
+    <wsdl:fault name="AccountNotFound" message="tns:AccountNotFoundFault"/>
+  </wsdl:operation>
+</wsdl:portType>
+```
+
+This typed-client codegen is SOAP's main remaining strength. REST didn't have a parallel until OpenAPI matured, and even now the typing is less rigorous.
+
+### WS-* extensions
+
+The "enterprise SOAP" ecosystem layers extra specs on top:
+
+- **WS-Security** — message-level signing/encryption (independent of TLS). Useful when messages pass through intermediaries.
+- **WS-ReliableMessaging** — guaranteed-delivery / exactly-once semantics.
+- **WS-AtomicTransaction** — distributed two-phase commit across services.
+- **WS-Addressing** — message-level routing.
+
+If a job posting mentions any of these, you're integrating with a legacy enterprise system.
+
+### Calling SOAP from JavaScript
+
+It's just an HTTP POST with an XML body and a `SOAPAction` header — nothing special — but everyone uses a library because building the envelope and parsing faults by hand is painful:
+
+```js
+// Node example with `soap`
+import * as soap from "soap";
+const client = await soap.createClientAsync("https://api.example.com/bank?wsdl");
+const [result] = await client.GetBalanceAsync({ AccountId: 42 });
+console.log(result.Balance);
+```
+
+In the browser you'd typically proxy through your own backend — most public SOAP endpoints don't enable CORS.
+
+### When SOAP still wins
+
+- Strict, contract-bound integrations (B2B, financial, healthcare, government).
+- Message-level security where TLS-only isn't enough (multi-hop with intermediaries).
+- Distributed transactions (rare, but real in some financial systems).
+- The other side **only** speaks SOAP.
+
+If you're starting fresh and have a choice, you almost certainly don't pick SOAP today.
+
+## XML-RPC
+
+The **predecessor to SOAP** (1998). Same idea — call a named procedure with typed parameters — but radically simpler. One method per request, no envelope/header layering, no extensions.
+
+```xml
+<?xml version="1.0"?>
+<methodCall>
+  <methodName>getBalance</methodName>
+  <params>
+    <param><value><int>42</int></value></param>
+  </params>
+</methodCall>
+```
+
+Response:
+
+```xml
+<methodResponse>
+  <params>
+    <param><value><double>1234.56</double></value></param>
+  </params>
+</methodResponse>
+```
+
+You'll see XML-RPC in old WordPress (`xmlrpc.php`), some scientific computing pipelines, and a few legacy enterprise tools. JSON-RPC effectively replaced it.
+
+## JSON-RPC
+
+The JSON cousin of XML-RPC. Tiny, dead simple, popular in **blockchain (Ethereum's `eth_*` API), embedded systems, language-server protocols (LSP), and some internal microservices**.
+
+### Request / response
+
+```json
+// Request
+{ "jsonrpc": "2.0", "method": "subtract", "params": [42, 23], "id": 1 }
+
+// Response
+{ "jsonrpc": "2.0", "result": 19, "id": 1 }
+
+// Error
+{ "jsonrpc": "2.0", "error": { "code": -32601, "message": "Method not found" }, "id": 1 }
+```
+
+Three rules worth remembering:
+
+1. **One endpoint** — typically `POST /rpc` — and the method name is in the body.
+2. **`id` correlates request ↔ response** — clients can fire many in flight and match them up.
+3. **Notifications** (no `id` field) don't get a response — fire-and-forget.
+
+JSON-RPC supports **batching** — send an array of requests, get an array of responses back, in any order:
+
+```json
+[
+  { "jsonrpc": "2.0", "method": "getBalance", "params": [42], "id": 1 },
+  { "jsonrpc": "2.0", "method": "getBalance", "params": [43], "id": 2 }
+]
+```
+
+Browser usage is the same as any POST:
+
+```js
+const res = await fetch("/rpc", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    jsonrpc: "2.0",
+    method: "getBalance",
+    params: [42],
+    id: 1,
+  }),
+});
+const { result, error } = await res.json();
+```
+
+### Where you'll see it
+
+- **Ethereum / EVM chains** — `eth_blockNumber`, `eth_getBalance`, `eth_sendTransaction`. Web3 libraries are JSON-RPC wrappers over HTTPS or WebSocket.
+- **Language Server Protocol (LSP)** — what powers VS Code's TypeScript/Rust/etc. integrations. The editor and the language server speak JSON-RPC over stdio or a socket.
+- **MetaMask / browser wallets** — extension's `window.ethereum.request({ method, params })` is JSON-RPC under the hood.
+- **Internal tooling** — when you don't want to design URLs and just want to call functions.
+
+## tRPC
+
+A modern, **TypeScript-only**, schema-less RPC for full-stack TS apps. Not a wire format like the others — it's a library + convention. The "schema" is just your TypeScript types, shared between server and client.
+
+```ts
+// server.ts
+const appRouter = router({
+  getUser: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(({ input }) => db.users.find(input.id)),
+});
+
+// client.ts — same types, end-to-end typed, no codegen
+const user = await trpc.getUser.query({ id: "42" });
+//      ^? User
+```
+
+Why teams use it:
+
+- **Zero codegen.** The client imports the router type from the server.
+- **End-to-end type safety.** Rename a field on the server, the client immediately won't compile.
+- **No URL design, no schema files.** You write functions; tRPC handles the wire format (which is JSON over HTTP, similar in shape to JSON-RPC).
+- **Plays well with React Query / TanStack Query.** Built-in hooks for queries, mutations, subscriptions.
+
+When *not* to pick tRPC:
+
+- The client isn't TypeScript (mobile native, Python, anything cross-language) — you lose the whole point.
+- You're building a public API that third parties will call. Public APIs need a stable, documented contract; tRPC's "schema" is your TS types.
+
+## Quick comparison
+
+| | SOAP | XML-RPC | JSON-RPC | tRPC | REST | GraphQL | gRPC |
+|---|---|---|---|---|---|---|---|
+| **Format** | XML | XML | JSON | JSON | JSON | JSON | Protobuf |
+| **Schema** | WSDL | none | none (often informal) | TS types | OpenAPI (optional) | required | `.proto` (required) |
+| **Typed client codegen** | ✓ (mature) | rare | rare | ✓ (live, no codegen) | OpenAPI tools | ✓ | ✓ |
+| **Caching** | hard | hard | hard | hard (POST) | HTTP-native | custom | custom |
+| **Browser native** | ✓ (via fetch) | ✓ (via fetch) | ✓ (via fetch) | ✓ (via fetch) | ✓ | ✓ | needs grpc-web |
+| **Use case** | Legacy enterprise / B2B | Old WordPress, some pipelines | Blockchain, LSP, some internal | TS full-stack apps | Public CRUD | Variable client shapes | Internal high-throughput |
+
+## Likely interview questions
+
+- **"What's the difference between SOAP and REST?"** SOAP is procedure-oriented, XML-only, contract-driven (WSDL), with optional message-level security and reliability extensions; REST is resource-oriented, format-flexible (usually JSON), and leans on HTTP semantics for caching and verbs. SOAP is heavyweight and survives in regulated domains; REST won the public web.
+- **"When would you reach for SOAP over REST today?"** When you're integrating with an existing SOAP service (banking, insurance, gov), when you need WS-Security message-level signing across multiple hops, or when you have a strict typed contract and rich tooling already invested. Almost never for greenfield.
+- **"What's a WSDL?"** XML document describing a SOAP service: operations, parameters, types, faults, endpoints. Tooling generates typed client stubs from it.
+- **"What's JSON-RPC and where have you seen it?"** A minimal JSON-over-HTTP RPC spec. Single endpoint, method name in the body, request/response correlated by `id`. Most visible in Ethereum / Web3 (`eth_*` methods), Language Server Protocol, and some internal microservices.
+- **"Why is tRPC popular if we already have GraphQL?"** Different problem. GraphQL solves variable-shape queries across a typed schema, useful when many clients want different slices of the same data. tRPC solves end-to-end type safety in a single TypeScript codebase with zero codegen — you call server functions like local functions. If your client and server are both TS in one repo, tRPC is lighter; if you have polyglot clients or an external API, GraphQL or REST wins.
+- **"What's the downside of one-endpoint RPC styles for caching?"** Every call is a POST, so HTTP caches (CDNs, browsers, `ETag`/`If-None-Match`) don't help. You either cache server-side, design idempotent reads as GETs (some JSON-RPC variants do this), or accept the cost.
+- **"What's `<soap:Fault>`?"** SOAP's structured error response inside the envelope body. Has a `Code` (sender / receiver / version-mismatch / must-understand) and human-readable `Reason`. Tooling maps faults to typed exceptions in client stubs.
+
+## Sources
+
+- [SOAP Version 1.2 — W3C Recommendation](https://www.w3.org/TR/soap12/)
+- [WSDL 2.0 — W3C](https://www.w3.org/TR/wsdl20/)
+- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
+- [Ethereum JSON-RPC API](https://ethereum.org/en/developers/docs/apis/json-rpc/)
+- [Language Server Protocol Specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/)
+- [tRPC Documentation](https://trpc.io/docs)

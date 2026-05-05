@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Atkinson_Hyperlegible } from "next/font/google";
 import "./globals.css";
 import "prismjs/themes/prism-tomorrow.css";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { TypographySettings } from "@/components/TypographySettings";
 import { FloatingChat } from "@/components/FloatingChat";
 import { PageContextProvider } from "@/lib/pageContext";
 
@@ -14,6 +15,12 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const atkinson = Atkinson_Hyperlegible({
+  variable: "--font-atkinson",
+  weight: ["400", "700"],
   subsets: ["latin"],
 });
 
@@ -43,13 +50,13 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${atkinson.variable} h-full antialiased`}
     >
       <head>
-        {/* Inline before hydration so the dark class is set before first paint */}
+        {/* Inline before hydration so theme + typography settings apply before first paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+            __html: `(function(){try{var d=document.documentElement;var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches)){d.classList.add('dark')}var s=localStorage.getItem('typo.size');if(s){d.style.setProperty('--app-font-size',s)}var f=localStorage.getItem('typo.family');if(f){d.style.setProperty('--app-font-family',f)}}catch(e){}})();`,
           }}
         />
       </head>
@@ -73,6 +80,7 @@ export default function RootLayout({
                   {link.label}
                 </Link>
               ))}
+              <TypographySettings />
               <ThemeToggle />
             </nav>
           </div>

@@ -1,0 +1,318 @@
+---
+title: "Fetching Data on the Front End"
+tags: ["javascript", "fetch", "xhr", "http", "network", "browser", "interviews"]
+related: ["javascript-promises", "rest-apis", "apis-cheat-sheet"]
+---
+
+The browser has two HTTP APIs: the modern **Fetch API** and the legacy **XMLHttpRequest** (XHR). Fetch is what you write today; XHR is what you'll see in old codebases, polyfills, and one specific case where it's still ahead (upload progress). This note covers both, plus the request/response surface area that interviewers actually probe.
+
+For the protocol-level concepts (status codes, headers, idempotency, caching), see the [REST APIs note](./rest-apis). This one is about the **client**.
+
+## Fetch in 30 seconds
+
+```js
+const res = await fetch("/api/users/42", {
+  method: "GET",
+  headers: { Accept: "application/json" },
+  credentials: "same-origin",
+  signal: controller.signal,
+});
+
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+const user = await res.json();
+```
+
+`fetch` returns a **`Response`** object. The promise rejects only on **network failure** (DNS, offline, CORS) — *not* on HTTP error status. That's the #1 fetch gotcha: a 500 response is still a "successful" promise. You must check `res.ok` (true for 2xx) yourself.
+
+## Fetch vs XHR
+
+| | Fetch | XHR |
+|---|---|---|
+| **Promise-based** | ✓ | ✗ (callback events: `onload`, `onerror`, `onprogress`) |
+| **Streams responses** | ✓ (`Response.body` is a `ReadableStream`) | partial (chunks via `responseText`, no real backpressure) |
+| **Streams uploads** | ✓ (in modern Chrome with HTTP/2; behind a flag elsewhere) | ✗ |
+| **Upload progress** | ✗ (gap in spec) | ✓ (`xhr.upload.onprogress`) |
+| **Abort** | ✓ via `AbortController` | ✓ via `xhr.abort()` |
+| **Sends cookies by default** | ✗ — must opt in (`credentials: "include"`) | ✓ on same-origin; cross-origin needs `withCredentials = true` |
+| **Default error semantics** | rejects on network only; HTTP errors resolve | similar (`onload` fires for any status) |
+| **Timeout** | manual (`AbortController` + `setTimeout`) | built-in (`xhr.timeout`) |
+
+**Use XHR only for upload progress.** Everything else is `fetch`. If you need both, libraries like Axios paper over the difference.
+
+```js
+// XHR upload progress — the one thing fetch can't do (yet) cross-browser
+const xhr = new XMLHttpRequest();
+xhr.upload.addEventListener("progress", (e) => {
+  if (e.lengthComputable) {
+    console.log(`${(e.loaded / e.total) * 100}%`);
+  }
+});
+xhr.open("POST", "/upload");
+xhr.send(formData);
+```
+
+## Request bodies
+
+`fetch` accepts several body types and sets `Content-Type` automatically for some:
+
+| Body | Content-Type set? | Use for |
+|---|---|---|
+| `string` | no — set it yourself | Raw text, pre-stringified JSON |
+| `FormData` | yes (`multipart/form-data; boundary=...`) | File uploads, traditional forms |
+| `URLSearchParams` | yes (`application/x-www-form-urlencoded`) | URL-encoded form posts |
+| `Blob` / `File` | yes (the blob's `type`) | Direct binary uploads |
+| `ArrayBuffer` / typed array | no — set it yourself | Binary data |
+| `ReadableStream` | no — set it yourself | Streaming uploads (limited support) |
+
+```js
+// JSON
+await fetch("/api/users", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ name: "Maya" }),
+});
+
+// File upload
+const fd = new FormData();
+fd.append("avatar", fileInput.files[0]);
+fd.append("crop", "square");
+await fetch("/api/avatar", { method: "POST", body: fd });
+// Don't manually set Content-Type for FormData — the browser adds the boundary.
+
+// URL-encoded form post
+await fetch("/api/login", {
+  method: "POST",
+  body: new URLSearchParams({ email, password }),
+});
+```
+
+## Response handling
+
+`Response` exposes the body via several **one-shot** methods (you can only call one of them per response):
+
+```js
+await res.text();         // string
+await res.json();         // parsed JSON
+await res.blob();         // for downloads
+await res.arrayBuffer();  // for binary
+await res.formData();     // rare
+```
+
+`res.body` is a `ReadableStream` if you want to stream the response yourself (NDJSON, SSE-via-fetch, big downloads with progress):
+
+```js
+const reader = res.body.getReader();
+const decoder = new TextDecoder();
+let buf = "";
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  buf += decoder.decode(value, { stream: true });
+  // process buf incrementally...
+}
+```
+
+This is exactly what the interview chat in this app does — see `app/interview/[sessionId]/page.tsx` for an NDJSON streaming reader.
+
+## Aborting a request
+
+`fetch` doesn't have a built-in timeout. Use `AbortController`:
+
+```js
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 5000);
+
+try {
+  const res = await fetch(url, { signal: controller.signal });
+  clearTimeout(timeout);
+  return await res.json();
+} catch (err) {
+  if (err.name === "AbortError") {
+    throw new Error("Request timed out");
+  }
+  throw err;
+}
+```
+
+The same pattern works for user-initiated cancellation (close a modal, navigate away). Also wires into React effect cleanup:
+
+```js
+useEffect(() => {
+  const ctrl = new AbortController();
+  fetch("/api/data", { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then(setData)
+    .catch((err) => {
+      if (err.name !== "AbortError") setError(err);
+    });
+  return () => ctrl.abort();
+}, []);
+```
+
+Modern browsers also support `AbortSignal.timeout(ms)` for the common timeout case:
+
+```js
+fetch(url, { signal: AbortSignal.timeout(5000) });
+```
+
+## Credentials & CORS
+
+By default, `fetch` does **not** send cookies cross-origin. Three credential modes:
+
+| Mode | Behavior |
+|---|---|
+| `omit` | Never send cookies / auth headers |
+| `same-origin` (default) | Send for same-origin only |
+| `include` | Send cross-origin too (server must allow with `Access-Control-Allow-Credentials: true` and an explicit origin — not `*`) |
+
+```js
+fetch("https://api.example.com/me", { credentials: "include" });
+```
+
+CORS preflight (`OPTIONS`) fires when the request has any of: a non-simple method (`PUT`, `DELETE`, `PATCH`), a custom header, or `Content-Type: application/json` with credentials. The server must respond to the preflight with the right `Access-Control-Allow-*` headers within ~10 seconds, or the real request never goes out. See the CORS section in the [APIs cheat sheet](./apis-cheat-sheet) for headers.
+
+## Error handling patterns
+
+The defensive shape every fetch wrapper looks like:
+
+```js
+async function api(path, opts = {}) {
+  let res;
+  try {
+    res = await fetch(path, {
+      ...opts,
+      headers: { Accept: "application/json", ...opts.headers },
+    });
+  } catch (err) {
+    // Network failure — DNS, offline, CORS, abort
+    throw new NetworkError(err.message);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new HttpError(res.status, body);
+  }
+
+  if (res.status === 204) return null;
+  return res.json();
+}
+```
+
+Three failure modes to keep distinct:
+
+1. **Network error** — `fetch` itself throws.
+2. **HTTP error** — request completed, status is 4xx/5xx.
+3. **Body parse error** — `await res.json()` throws on malformed JSON.
+
+Frontends that conflate these end up showing "Network error" to users when the server returned a 500.
+
+## Other ways to talk to the network
+
+Worth knowing the names so you can pick the right tool:
+
+| API | Direction | Use when |
+|---|---|---|
+| `fetch` | request/response | Default. CRUD, JSON, files. |
+| `XMLHttpRequest` | request/response | Upload progress, legacy. |
+| `WebSocket` | bidirectional, persistent | Chat, collaborative editing, gaming. |
+| `EventSource` (SSE) | server → client | Server pushes (notifications, AI streaming). |
+| `navigator.sendBeacon` | one-way, fire-and-forget | Analytics on page unload — can't `await`. |
+| `Server-Sent Events via fetch` | server → client | When you need custom headers (SSE doesn't support them). |
+| Service Worker `fetch` interception | both | Offline support, caching, request rewriting. |
+
+`sendBeacon` is the underrated one — it's the only API that reliably fires during `unload` / `pagehide`, because the browser commits to delivering it without keeping the page alive.
+
+```js
+window.addEventListener("pagehide", () => {
+  navigator.sendBeacon("/api/log", JSON.stringify({ event: "leave" }));
+});
+```
+
+## Library wrappers (when interviewers ask)
+
+- **Axios** — promise-based wrapper, automatic JSON, request/response interceptors, request cancellation, browser + Node. Heavier, but mature.
+- **ky** — small modern fetch wrapper with retries, hooks, timeouts.
+- **TanStack Query / SWR** — not fetch wrappers; they're caching layers around your fetcher (dedupe, staleness, refetch-on-focus, mutations). Use one for any non-trivial app — solves the "useEffect + state + cleanup" gymnastics.
+
+You don't need them for a take-home. You probably want one in a real app.
+
+## Common interview gotchas
+
+### Gotcha 1: not checking `res.ok`
+
+```js
+const res = await fetch("/api/user");
+const user = await res.json();   // crashes on 500 if server returned HTML
+```
+
+A 500 with an HTML error page silently parses as `undefined` or throws a confusing `SyntaxError`. Always check `res.ok` first.
+
+### Gotcha 2: reading the body twice
+
+```js
+await res.text();    // OK
+await res.json();    // throws — body already consumed
+```
+
+Each response body is a one-shot stream. Clone first if you need to peek:
+
+```js
+const res = await fetch(url);
+const clone = res.clone();
+console.log(await clone.text());
+const data = await res.json();
+```
+
+### Gotcha 3: setting `Content-Type` for `FormData`
+
+```js
+fetch("/upload", {
+  method: "POST",
+  headers: { "Content-Type": "multipart/form-data" },   // ← wrong
+  body: formData,
+});
+```
+
+Manually setting it strips the auto-generated boundary, and the server can't parse the body. Either let the browser set it, or set it with the correct boundary yourself (no one does this).
+
+### Gotcha 4: forgetting cookies cross-origin
+
+```js
+// API on api.example.com, app on app.example.com
+fetch("https://api.example.com/me");   // no cookies sent
+```
+
+Cross-origin requires `credentials: "include"` *and* the server must respond with `Access-Control-Allow-Credentials: true` plus an explicit origin (not `*`).
+
+### Gotcha 5: not aborting in-flight requests
+
+A user types in a search box; each keystroke fires a fetch. Without aborting, slow responses can arrive after newer ones and overwrite the UI with stale data:
+
+```js
+useEffect(() => {
+  const ctrl = new AbortController();
+  fetch(`/search?q=${query}`, { signal: ctrl.signal })
+    .then((r) => r.json())
+    .then(setResults)
+    .catch(() => {});
+  return () => ctrl.abort();   // ← this matters
+}, [query]);
+```
+
+## Likely interview questions
+
+- **"What's the difference between `fetch` and `XMLHttpRequest`?"** Fetch is promise-based, streams responses, integrates with `AbortController`, and has cleaner ergonomics; XHR uses callbacks (`onload`/`onerror`/`onprogress`) and is the only API that reports upload progress today. Use fetch by default; reach for XHR only for upload progress.
+- **"Why does `fetch` not reject on a 500?"** Because the spec says "network errors only." A 500 is a successful network round-trip — the server replied. You're expected to check `res.ok` and decide what an HTTP error means in your app.
+- **"How do you implement a request timeout?"** `AbortController` + `setTimeout(() => controller.abort(), ms)`, or `AbortSignal.timeout(ms)` in modern browsers. Catch `AbortError` separately so you can show "request timed out" instead of "network error."
+- **"How do you upload a file with fetch?"** `new FormData()` with the file appended, `fetch(url, { method: "POST", body: fd })`. Don't set `Content-Type` — the browser adds the multipart boundary.
+- **"How do you cancel a fetch when the user navigates away (in React)?"** Create an `AbortController` in `useEffect`, pass `signal: ctrl.signal` to fetch, and return a cleanup that calls `ctrl.abort()`.
+- **"How do you handle CORS errors?"** They're a *server* problem, not a client one — the server must respond with `Access-Control-Allow-Origin` (and matching `Allow-Credentials`/`Allow-Headers` for non-simple requests). Client-side, all you can do is detect the failure and show a clearer message; you can't bypass it.
+- **"How would you stream a large response?"** Read `res.body` as a `ReadableStream`, decode chunks with `TextDecoder({ stream: true })`, and process incrementally (NDJSON line-by-line, SSE event-by-event, etc.).
+
+## Sources
+
+- [Fetch API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)
+- [`AbortController` — MDN](https://developer.mozilla.org/en-US/docs/Web/API/AbortController)
+- [`XMLHttpRequest` — MDN](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest)
+- [Streaming requests with the fetch API — web.dev](https://web.dev/articles/fetch-upload-streaming)
+- [Beacon API — MDN](https://developer.mozilla.org/en-US/docs/Web/API/Beacon_API)
